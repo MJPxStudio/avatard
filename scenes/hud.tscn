@@ -1,0 +1,12 @@
+[gd_scene format=3 uid="uid://7qfvqisqst50"]
+
+[ext_resource type="Script" uid="uid://dxxl1rwr2oos4" path="res://scripts/hud.gd" id="1_ahhtf"]
+[ext_resource type="Script" uid="uid://crq5iyweymht5" path="res://scripts/wolf.gd" id="2_oo0fn"]
+
+[node name="CanvasLayer" type="CanvasLayer" unique_id=1384565273]
+script = ExtResource("1_ahhtf")
+
+[node name="Wolf" type="CharacterBody2D" parent="." unique_id=1757685815]
+script = ExtResource("2_oo0fn")
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Wolf" unique_id=2145933312]

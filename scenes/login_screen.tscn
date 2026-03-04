@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://rufqcmbdqw1t"]
+
+[ext_resource type="Script" uid="uid://bg572s4e8ol5b" path="res://scripts/login_screen.gd" id="1_1lob1"]
+
+[node name="LoginScreen" type="CanvasLayer" unique_id=612568365]
+script = ExtResource("1_1lob1")

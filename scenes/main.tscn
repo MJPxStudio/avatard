@@ -1,0 +1,13 @@
+[gd_scene format=3 uid="uid://bjsmf0jkwck7p"]
+
+[ext_resource type="PackedScene" uid="uid://byoq8qu6jgw17" path="res://scenes/player.tscn" id="1_player"]
+[ext_resource type="Script" uid="uid://bd4pvmr3j0b6o" path="res://scripts/main.gd" id="2_main"]
+[ext_resource type="PackedScene" uid="uid://ce2jyd4le5j73" path="res://scenes/wolf.tscn" id="3_sugp2"]
+
+[node name="Main" type="Node2D" unique_id=982939951]
+script = ExtResource("2_main")
+
+[node name="Player" parent="." unique_id=1705084416 instance=ExtResource("1_player")]
+position = Vector2(320, 240)
+
+[node name="Wolf" parent="." unique_id=1715904522 instance=ExtResource("3_sugp2")]

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dhimr140sre1r"]
+
+[ext_resource type="Script" uid="uid://bntofcdgubke6" path="res://scripts/hotbar.gd" id="1_yj1xu"]
+
+[node name="hotbar" type="CanvasLayer" unique_id=2058123926]
+script = ExtResource("1_yj1xu")
