@@ -5,7 +5,7 @@ const LOCAL_CONFIG_PATH = "res://server_config.json"
 
 # Replace with your actual GitHub raw URL to server_config.json
 # e.g. "https://raw.githubusercontent.com/yourname/avatard/main/server_config.json"
-const REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/MJPxStudio/avatard/main/server_config.json"
+const REMOTE_CONFIG_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/server_config.json"
 
 var PORT: int = 7777
 var SERVER_IP: String = "0.0.0.0"
@@ -58,6 +58,7 @@ func _load_local_config() -> void:
 
 func _fetch_remote_config() -> void:
 	var http = HTTPRequest.new()
+	http.timeout = 4.0  # Give up after 4 seconds and use local config
 	add_child(http)
 	http.request_completed.connect(_on_remote_config_received.bind(http))
 	var err = http.request(REMOTE_CONFIG_URL)
