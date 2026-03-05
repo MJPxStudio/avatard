@@ -14,14 +14,16 @@ var server_players: Dictionary = {}
 var sync_timer: float = 0.0
 const SYNC_RATE: float = 0.05
 
+var remote_enemy_nodes: Dictionary = {}  # enemy_id -> Node2D
+var remote_player_nodes: Dictionary = {}  # peer_id -> RemotePlayer node
+var world_node = null  # reference to main scene set after login
+
 func _ready() -> void:
 	# Use call_deferred so Network is guaranteed to exist
 	call_deferred("_connect_signals")
 
-var remote_enemy_nodes: Dictionary = {}  # enemy_id -> Node2D
-
 func _connect_signals() -> void:
-	var net = get_tree().root.get_node_or_null("Network")
+	var net = get_node_or_null("/root/Network")
 	if net == null:
 		push_error("Network autoload not found")
 		return
@@ -29,10 +31,27 @@ func _connect_signals() -> void:
 	net.login_denied_client.connect(_on_login_denied)
 	net.players_synced_client.connect(_on_players_synced)
 	net.damage_received_client.connect(_on_damage_received)
+	net.login_request_received.connect(_on_login_request)
 	net.step_received.connect(server_handle_step)
 	net.attack_received.connect(server_handle_attack)
 	net.player_disconnected.connect(_on_player_disconnected)
 	net.enemies_synced_client.connect(_on_enemies_synced)
+
+func _on_login_request(peer_id: int, username: String) -> void:
+	var net = get_node_or_null("/root/Network")
+	if username.is_empty():
+		net.deny_login(peer_id, "Invalid username.")
+		return
+	for pid in net.players:
+		if net.players[pid]["username"] == username and pid != peer_id:
+			net.deny_login(peer_id, "Already logged in.")
+			return
+	net.players[peer_id]["username"] = username
+	var db = get_node_or_null("/root/Database")
+	var player_data = db.load_player(username)
+	net.accept_login(peer_id, player_data)
+	server_player_joined.emit(peer_id, player_data)
+	print("[SERVER] Player logged in: %s (peer %d)" % [username, peer_id])
 
 func _on_enemies_synced(states: Dictionary) -> void:
 	if world_node == null:
@@ -52,7 +71,6 @@ func _on_enemies_synced(states: Dictionary) -> void:
 			remote_enemy_nodes[enemy_id].queue_free()
 			remote_enemy_nodes.erase(enemy_id)
 
-
 func _on_login_accepted(player_data: Dictionary) -> void:
 	my_username = player_data.get("username", "")
 	my_player_data = player_data
@@ -60,9 +78,6 @@ func _on_login_accepted(player_data: Dictionary) -> void:
 
 func _on_login_denied(reason: String) -> void:
 	login_denied.emit(reason)
-
-var remote_player_nodes: Dictionary = {}
-var world_node = null
 
 func _on_players_synced(states: Dictionary) -> void:
 	remote_players = states
@@ -72,8 +87,8 @@ func _on_players_synced(states: Dictionary) -> void:
 func _update_remote_player_nodes(states: Dictionary) -> void:
 	if world_node == null:
 		return
-	var my_id = get_tree().root.get_node_or_null("Network")
-	var my_peer_id = my_id.get_my_id() if my_id else -1
+	var net = get_node_or_null("/root/Network")
+	var my_peer_id = net.get_my_id() if net else -1
 
 	# Spawn or update remote players
 	for peer_id in states:
@@ -81,7 +96,6 @@ func _update_remote_player_nodes(states: Dictionary) -> void:
 			continue
 		var state = states[peer_id]
 		if not remote_player_nodes.has(peer_id):
-			# Spawn new remote player
 			var rp = Node2D.new()
 			rp.set_script(load("res://scripts/remote_player.gd"))
 			rp.peer_id = peer_id
@@ -91,7 +105,6 @@ func _update_remote_player_nodes(states: Dictionary) -> void:
 			rp.target_position = rp.global_position
 			remote_player_nodes[peer_id] = rp
 		else:
-			# Update position
 			remote_player_nodes[peer_id].update_position(state.get("position", Vector2.ZERO))
 
 	# Remove disconnected players
@@ -106,7 +119,7 @@ func _on_damage_received(amount: int, knockback_dir: Vector2) -> void:
 func _on_player_disconnected(peer_id: int) -> void:
 	if server_players.has(peer_id):
 		var sp = server_players[peer_id]
-		var db = get_tree().root.get_node_or_null("Database")
+		var db = get_node_or_null("/root/Database")
 		db.save_player(sp.username, sp.get_save_data())
 		sp.queue_free()
 		server_players.erase(peer_id)
@@ -121,7 +134,7 @@ func server_handle_attack(peer_id: int, direction: Vector2) -> void:
 		server_players[peer_id].request_attack(direction)
 
 func _process(delta: float) -> void:
-	var net = get_tree().root.get_node_or_null("Network")
+	var net = get_node_or_null("/root/Network")
 	if net == null or not net.is_server:
 		return
 	sync_timer += delta
@@ -130,7 +143,7 @@ func _process(delta: float) -> void:
 		_broadcast_player_states()
 
 func _broadcast_player_states() -> void:
-	var net = get_tree().root.get_node_or_null("Network")
+	var net = get_node_or_null("/root/Network")
 	if net == null:
 		return
 	var states = {}

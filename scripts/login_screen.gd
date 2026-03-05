@@ -10,6 +10,13 @@ func _ready() -> void:
 	Network.connection_failed.connect(_on_connection_failed)
 	Network.login_accepted_client.connect(_on_login_accepted)
 	Network.login_denied_client.connect(_on_login_denied)
+	# Wait for remote config to load before connecting
+	if Network.is_connected("config_ready", _on_config_ready):
+		pass
+	Network.config_ready.connect(_on_config_ready)
+
+func _on_config_ready() -> void:
+	status_label.text = "Connecting..."
 	Network.launch_as_client()
 
 func _build_ui() -> void:
@@ -37,7 +44,7 @@ func _build_ui() -> void:
 	connect_btn.disabled = true
 	vbox.add_child(connect_btn)
 	status_label = Label.new()
-	status_label.text = "Connecting..."
+	status_label.text = "Fetching server info..."
 	status_label.add_theme_font_size_override("font_size", 9)
 	status_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(status_label)
