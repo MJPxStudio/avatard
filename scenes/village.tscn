@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://drlg2pw4tfbms"]
+
+[ext_resource type="Script" uid="uid://bjd58atujt3y8" path="res://scripts/village.gd" id="1_eexne"]
+
+[node name="village" type="Node2D" unique_id=1935316005]
+script = ExtResource("1_eexne")

@@ -16,6 +16,6 @@ position = Vector2(0, -10)
 [node name="CollisionShape2D" type="CollisionShape2D" parent="." unique_id=1287138472]
 shape = SubResource("RectangleShape2D_col")
 
-[node name="Camera2D" type="Camera2D" parent="." unique_id=1849579648]
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1849579648 groups=["camera"]]
 position_smoothing_speed = 1.0
 script = ExtResource("2_camera")

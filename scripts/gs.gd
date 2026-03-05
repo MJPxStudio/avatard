@@ -30,6 +30,18 @@ func _connect_signals() -> void:
 	Network.enemies_synced_client.connect(_on_enemies_synced)
 	Network.player_disconnected.connect(_on_player_disconnected)
 
+func clear_world() -> void:
+	# Called when zone changes — clear all remote node references
+	for peer_id in remote_player_nodes.keys():
+		if is_instance_valid(remote_player_nodes[peer_id]):
+			remote_player_nodes[peer_id].queue_free()
+	remote_player_nodes.clear()
+	for enemy_id in remote_enemy_nodes.keys():
+		if is_instance_valid(remote_enemy_nodes[enemy_id]):
+			remote_enemy_nodes[enemy_id].queue_free()
+	remote_enemy_nodes.clear()
+	world_node = null
+
 func _on_login_accepted(player_data: Dictionary) -> void:
 	my_username    = player_data.get("username", "")
 	my_player_data = player_data

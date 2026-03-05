@@ -69,6 +69,12 @@ var bleed_ticks:  int   = 0
 var bleed_damage: int   = 2
 var bleed_timer:  float = 0.0
 
+# HoT (Heal over Time)
+var hot_ticks:    int   = 0
+var hot_amount:   int   = 0
+var hot_interval: float = 1.0
+var hot_timer:    float = 0.0
+
 func _ready() -> void:
 	# Snap starting position to grid
 	grid_pos = _snap_to_grid(global_position)
@@ -157,6 +163,16 @@ func _physics_process(delta: float) -> void:
 		if invuln_ticks <= 0:
 			invuln_ticks = 0
 			modulate.a = 1.0
+
+	# HoT tick
+	if hot_ticks > 0:
+		hot_timer -= delta
+		if hot_timer <= 0.0:
+			hot_timer = hot_interval
+			current_hp = min(max_hp, current_hp + hot_amount)
+			hot_ticks -= 1
+			_spawn_damage_number(global_position, hot_amount, Color("2ecc71"))
+			_update_hud()
 
 	# Bleed tick
 	if bleed_ticks > 0:
@@ -383,8 +399,29 @@ func _spawn_damage_number(pos: Vector2, amount: int, color: Color = Color("ffdd0
 
 # ------ TAKE DAMAGE ---------------------------------------------------------------------------------------------------------------------------------------
 
+func start_hot(amount: int, interval: float, ticks: int) -> void:
+	hot_amount   = amount
+	hot_interval = interval
+	hot_ticks    = ticks
+	hot_timer    = 0.0
+	print("[PLAYER] HoT started: %d HP x %d ticks" % [amount, ticks])
+
+func _get_substitution() -> AbilityBase:
+	if hotbar == null:
+		return null
+	for slot in hotbar.slots:
+		if slot != null and slot is AbilitySubstitution:
+			return slot
+	return null
+
 func take_damage(amount: int, knockback_dir: Vector2 = Vector2.ZERO, kb_force: float = 0.0) -> void:
 	if is_dead or invuln_ticks > 0:
+		return
+	# Check substitution jutsu
+	var sub = _get_substitution()
+	if sub != null and sub.is_primed:
+		var attacker_pos = global_position + knockback_dir * 60.0
+		sub.try_substitute(self, attacker_pos)
 		return
 	current_hp = max(0, current_hp - amount)
 	invuln_ticks = 0.6

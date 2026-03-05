@@ -1,0 +1,9 @@
+[gd_scene format=3 uid="uid://dcc0efohicsx4"]
+
+[ext_resource type="Script" uid="uid://c1fcb5xmgvpie" path="res://scripts/open_world.gd" id="1_0ugdo"]
+[ext_resource type="PackedScene" uid="uid://byoq8qu6jgw17" path="res://scenes/player.tscn" id="2_otykf"]
+
+[node name="open_world" type="Node2D" unique_id=1984470029]
+script = ExtResource("1_0ugdo")
+
+[node name="Player" parent="." unique_id=212132045 groups=["local_player"] instance=ExtResource("2_otykf")]

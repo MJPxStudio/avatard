@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://dcrq3djqmrtbh"]
+
+[ext_resource type="Script" uid="uid://4uc4ssr17a80" path="res://scripts/hokage_interior.gd" id="1_oo61t"]
+
+[node name="hokage_interior" type="Node2D" unique_id=333682442]
+script = ExtResource("1_oo61t")

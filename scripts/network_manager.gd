@@ -28,6 +28,7 @@ signal server_disconnected()
 signal login_request_received(peer_id, username)
 signal login_accepted_client(player_data)
 signal login_denied_client(reason)
+signal ability_used_received(peer_id, ability_name, data)
 signal step_received(peer_id, direction)
 signal attack_received(peer_id, direction)
 signal players_synced_client(states)
@@ -170,6 +171,13 @@ func send_step(direction: Vector2) -> void:
 	step_received.emit(multiplayer.get_remote_sender_id(), direction)
 
 @rpc("any_peer", "reliable")
+func send_ability(ability_name: String, data: Dictionary) -> void:
+	if not is_server:
+		return
+	var peer_id = multiplayer.get_remote_sender_id()
+	ability_used_received.emit(peer_id, ability_name, data)
+
+@rpc("any_peer", "reliable")
 func send_attack(direction: Vector2) -> void:
 	if not is_server:
 		return
@@ -205,3 +213,14 @@ func get_my_id() -> int:
 
 func is_network_connected() -> bool:
 	return multiplayer.multiplayer_peer != null
+
+@rpc("any_peer", "reliable")
+func send_zone_change(zone_name: String) -> void:
+	if not is_server:
+		return
+	var peer_id = multiplayer.get_remote_sender_id()
+	if players.has(peer_id):
+		players[peer_id]["zone"] = zone_name
+	zone_changed.emit(peer_id, zone_name)
+
+signal zone_changed(peer_id, zone_name)

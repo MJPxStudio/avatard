@@ -20,17 +20,13 @@ func _ready() -> void:
 	Network.player_disconnected.connect(_on_player_disconnected)
 	Network.step_received.connect(_on_step)
 	Network.attack_received.connect(_on_attack)
+	Network.ability_used_received.connect(_on_ability_used)
 	print("[SERVER] Signals connected.")
 	Arena.build(self, false)
 	call_deferred("_spawn_wolf")
 
 func _spawn_wolf() -> void:
-	var wolf_scene = load("res://scenes/wolf.tscn")
-	if wolf_scene:
-		wolf_node = wolf_scene.instantiate()
-		wolf_node.global_position = Vector2(200, 100)
-		add_child(wolf_node)
-		print("[SERVER] Wolf spawned")
+	pass  # Wolf disabled until zone-aware enemy spawning is implemented
 
 func _on_login_request(peer_id: int, username: String) -> void:
 	print("[SERVER] Login request — peer: %d  username: '%s'" % [peer_id, username])
@@ -65,6 +61,26 @@ func _on_player_disconnected(peer_id: int) -> void:
 func _on_step(peer_id: int, direction: Vector2) -> void:
 	if server_players.has(peer_id):
 		server_players[peer_id].request_step(direction)
+
+func _on_ability_used(peer_id: int, ability_name: String, data: Dictionary) -> void:
+	match ability_name:
+		"fire_burst":
+			var pos    = data.get("position", Vector2.ZERO)
+			var radius = data.get("radius",   80.0)
+			var damage = data.get("damage",   35)
+			# Hit all server players in radius
+			for pid in server_players:
+				if pid == peer_id:
+					continue
+				var sp = server_players[pid]
+				if sp.world_pos.distance_to(pos) <= radius:
+					sp.take_damage(damage, (sp.world_pos - pos).normalized(), peer_id)
+			# Hit all enemies in radius
+			for enemy in get_tree().get_nodes_in_group("enemy"):
+				if enemy.global_position.distance_to(pos) <= radius:
+					if enemy.has_method("take_damage"):
+						enemy.take_damage(damage, (enemy.global_position - pos).normalized())
+					Network.confirm_hit.rpc_id(peer_id, enemy.global_position, damage)
 
 func _on_attack(peer_id: int, direction: Vector2) -> void:
 	if server_players.has(peer_id):

@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://bug8mirlenfey"]
+
+[ext_resource type="Script" uid="uid://c1fcb5xmgvpie" path="res://scripts/open_world.gd" id="1_rcaw0"]
+
+[node name="open_world" type="Node2D" unique_id=1358985651]
+script = ExtResource("1_rcaw0")
