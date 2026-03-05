@@ -1,19 +1,20 @@
 extends Node2D
 
 func _ready() -> void:
+	# If running as dedicated server export, hand off to server scene immediately
+	if OS.has_feature("dedicated_server"):
+		get_tree().change_scene_to_file.call_deferred("res://scenes/server_main.tscn")
+		return
+
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	Arena.build(self, true)
-	# Set world_node immediately so remote spawning works
 	var gs = get_tree().root.get_node_or_null("GameState")
 	if gs:
 		gs.world_node = self
-	# Hide player until logged in
 	$Player.visible = false
 	$Player.set_physics_process(false)
-	# Remove local wolf - server owns all enemy simulation
 	if has_node("Wolf"):
 		$Wolf.queue_free()
-	# Show login screen
 	_setup_login_screen()
 
 func _setup_login_screen() -> void:
@@ -22,7 +23,6 @@ func _setup_login_screen() -> void:
 	add_child(login)
 
 func on_player_logged_in(player_data: Dictionary) -> void:
-	# Apply saved player data
 	var player = $Player
 	player.stat_hp       = player_data.get("stat_hp", 5)
 	player.stat_chakra   = player_data.get("stat_chakra", 5)
@@ -39,26 +39,16 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 		"dex":      player.stat_dex,
 		"int":      player.stat_int
 	})
-
-	# Restore position
 	var saved_pos = player_data.get("position", Vector2.ZERO)
 	player.global_position = saved_pos if saved_pos != Vector2.ZERO else Vector2.ZERO
-	player.grid_pos = player.global_position
-	player.target_pos = player.global_position
-
-	# Show player and enable input
-	player.visible = true
+	player.grid_pos    = player.global_position
+	player.target_pos  = player.global_position
+	player.visible     = true
 	player.set_physics_process(true)
-
-	# Let player connect to network signals directly
 	player.connect_network_signals()
-
-	# Tell server our actual starting position
 	var net = get_tree().root.get_node_or_null("Network")
 	if net:
 		net.send_step.rpc_id(1, Vector2.ZERO)
-
-	# Setup UI
 	_setup_hud()
 	_setup_inventory()
 	_setup_hotbar()
