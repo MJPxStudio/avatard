@@ -19,7 +19,8 @@ const SLOT_POSITIONS = [
 ]
 
 # Slot names for tooltip context
-const SLOT_NAMES = ["Head", "Chest", "Legs", "Feet", "Weapon", "Offhand"]
+const SLOT_NAMES   = ["Weapon", "Head", "Chest", "Legs", "Shoes", "Accessory"]
+const SLOT_KEYS    = ["weapon", "head", "chest", "legs", "shoes", "accessory"]
 
 var slots: Array = []
 var slot_buttons: Array = []
@@ -93,30 +94,85 @@ func _on_drag_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion and is_dragging:
 		window_root.global_position = window_root.get_global_mouse_position() - drag_offset
 
+var player_ref: Node = null
+
+func set_player(p: Node) -> void:
+	player_ref = p
+
 func _on_slot_clicked(index: int) -> void:
-	# Will hook into inventory drag system later
-	pass
+	# Unequip item back to inventory on click
+	var item = slots[index]
+	if item == null:
+		return
+	var inv = player_ref.inventory if player_ref and player_ref.get("inventory") else null
+	if inv and inv.add_item(item):
+		slots[index] = null
+		_refresh_slot(index)
+		_send_equip_to_server()
 
 func _refresh_slot(index: int) -> void:
 	var btn = slot_buttons[index]
 	var item = slots[index]
 	if item == null:
 		btn.icon = null
-		btn.tooltip_text = SLOT_NAMES[index]
+		btn.tooltip_text = SLOT_NAMES[index] + " (empty)"
 	else:
-		btn.tooltip_text = SLOT_NAMES[index] + ": " + item.name
+		var bonuses = item.get("stat_bonuses", {})
+		var tip = SLOT_NAMES[index] + ": " + item.name
+		for k in bonuses:
+			if bonuses[k] != 0:
+				tip += "\n  +%d %s" % [bonuses[k], k.capitalize()]
+		tip += "\n[Click to unequip]"
+		btn.tooltip_text = tip
 		if item.get("icon_path", "") != "":
 			btn.icon = load(item.icon_path)
+
+func _send_equip_to_server() -> void:
+	var net = get_tree().root.get_node_or_null("Network")
+	if not net or not net.is_network_connected():
+		return
+	var equipped: Dictionary = {}
+	for i in range(6):
+		if slots[i] != null:
+			equipped[SLOT_KEYS[i]] = slots[i]
+	net.send_equip_update.rpc_id(1, equipped)
+
+func get_slot_for_item(item: Dictionary) -> int:
+	var key = item.get("equip_slot", "")
+	for i in range(SLOT_KEYS.size()):
+		if SLOT_KEYS[i] == key:
+			return i
+	return -1
+
+func equip_item(item: Dictionary) -> Dictionary:
+	# Equip item, return any displaced item (for inventory to re-add)
+	var idx = get_slot_for_item(item)
+	if idx == -1:
+		return item  # not equippable
+	var displaced = slots[idx]
+	slots[idx] = item
+	_refresh_slot(idx)
+	_send_equip_to_server()
+	return displaced if displaced != null else {}
 
 func equip(index: int, item_data: Dictionary) -> void:
 	slots[index] = item_data
 	_refresh_slot(index)
+	_send_equip_to_server()
 
 func unequip(index: int) -> Dictionary:
 	var item = slots[index]
 	slots[index] = null
 	_refresh_slot(index)
+	_send_equip_to_server()
 	return item if item != null else {}
+
+func get_all_equipped() -> Dictionary:
+	var out: Dictionary = {}
+	for i in range(6):
+		if slots[i] != null:
+			out[SLOT_KEYS[i]] = slots[i]
+	return out
 
 func toggle() -> void:
 	visible = !visible

@@ -1,6 +1,9 @@
 [gd_scene format=3 uid="uid://drlg2pw4tfbms"]
 
 [ext_resource type="Script" uid="uid://bjd58atujt3y8" path="res://scripts/village.gd" id="1_eexne"]
+[ext_resource type="PackedScene" uid="uid://57ovgyer7vw3" path="res://scenes/dungeon_portal.tscn" id="2_eexne"]
 
 [node name="village" type="Node2D" unique_id=1935316005]
 script = ExtResource("1_eexne")
+
+[node name="dungeonportal" parent="." unique_id=1412328191 instance=ExtResource("2_eexne")]

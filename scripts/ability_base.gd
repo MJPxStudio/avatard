@@ -13,6 +13,11 @@ class_name AbilityBase
 @export var activation:    String = "instant"  # "instant" or "targeted"
 @export var icon_color:    Color  = Color("ffffff")
 
+# Hit effect flags — set per ability
+@export var apply_knockback: bool = true
+@export var apply_stun:      bool = false   # future
+@export var apply_snare:     bool = false   # future
+
 # Runtime state
 var current_cooldown: float = 0.0
 var is_primed:        bool  = false   # for targeted abilities

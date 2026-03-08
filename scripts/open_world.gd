@@ -19,6 +19,7 @@ const C_GATE   = Color("4a3728")
 const C_PATH   = Color("c8a96e")
 
 func _ready() -> void:
+	set_meta("zone_name", "open_world")
 	var gs = get_tree().root.get_node_or_null("GameState")
 	if gs:
 		gs.world_node = self
@@ -55,26 +56,25 @@ func _build() -> void:
 		_rock(Vector2(rx, ry))
 
 	# --- RIVER (horizontal band through middle) ---
-	_rect(Vector2(0, -hh * 0.05), Vector2(W, H * 0.12), C_RIVER, 0)
+	# z=-1 so bridge (z=0) renders on top of it
+	_rect(Vector2(0, -hh * 0.05), Vector2(W, H * 0.12), C_RIVER, -1)
 	_label("River", Vector2(-60, -hh * 0.12))
-	# River collision (two walls, top and bottom edge)
-	_wall(Vector2(0, -hh * 0.05 - H * 0.06 - 16), Vector2(W, 32))
-	_wall(Vector2(0, -hh * 0.05 + H * 0.06 + 16), Vector2(W, 32))
 
 	# --- BRIDGE (center, crosses river) ---
-	_rect(Vector2(0, -hh * 0.05), Vector2(100, H * 0.14), C_BRIDGE, 1)
+	# z=0, river is z=-1, player is above both
+	_rect(Vector2(0, -hh * 0.05), Vector2(120, H * 0.14), C_BRIDGE, 0)
 	_label("Bridge", Vector2(-30, -hh * 0.1))
-	# Open the river walls at the bridge
-	# (handled by bridge being on top visually — collision gap needed)
-	# Left river wall gap
-	_wall(Vector2(-W * 0.275, -hh * 0.05 - H * 0.06 - 16), Vector2(W * 0.45, 32))
-	_wall(Vector2( W * 0.325, -hh * 0.05 - H * 0.06 - 16), Vector2(W * 0.35, 32))
-	_wall(Vector2(-W * 0.275, -hh * 0.05 + H * 0.06 + 16), Vector2(W * 0.45, 32))
-	_wall(Vector2( W * 0.325, -hh * 0.05 + H * 0.06 + 16), Vector2(W * 0.35, 32))
+
+	# River walls — two segments with 120px gap at center for bridge
+	var ry_top = -hh * 0.05 - H * 0.06 - 16
+	var ry_bot = -hh * 0.05 + H * 0.06 + 16
+	_wall(Vector2(-hw * 0.5 - 60, ry_top), Vector2(hw - 60, 32))
+	_wall(Vector2( hw * 0.5 + 60, ry_top), Vector2(hw - 60, 32))
+	_wall(Vector2(-hw * 0.5 - 60, ry_bot), Vector2(hw - 60, 32))
+	_wall(Vector2( hw * 0.5 + 60, ry_bot), Vector2(hw - 60, 32))
 
 	# --- VILLAGE GATE ENTRANCE (bottom center) ---
 	_rect(Vector2(0, hh - 60), Vector2(120, 60), C_GATE, 1)
-	_label("Village Gate", Vector2(-45, hh - 80))
 	# Door back to village
 	_zone_door(Vector2(0, hh - 40), "res://scenes/village.tscn", "village", Vector2(0, 560))
 

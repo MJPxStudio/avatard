@@ -15,7 +15,8 @@ func _init() -> void:
 	cooldown     = 6.0
 	chakra_cost  = 35
 	activation   = "instant"
-	icon_color   = Color("e74c3c")
+	icon_color      = Color("e74c3c")
+	apply_knockback = false   # AoE explosion — no directional knockback
 
 func activate(player: Node) -> bool:
 	if not is_ready():
@@ -31,20 +32,14 @@ func activate(player: Node) -> bool:
 	var net = player.get_node_or_null("/root/Network")
 	if net and net.is_network_connected():
 		net.send_ability.rpc_id(1, "fire_burst", {
-			"position": player.global_position,
-			"radius":   BURST_RADIUS,
-			"damage":   BURST_DAMAGE
+			"position":  player.global_position,
+			"radius":    BURST_RADIUS,
+			"damage":    BURST_DAMAGE,
+			"knockback": false
 		})
 	print("[ABILITY] Fire Burst activated at %s" % player.global_position)
 	return true
 
 func _spawn_visual(player: Node) -> void:
-	var burst      = ColorRect.new()
-	burst.color    = Color(1.0, 0.4, 0.0, 0.6)
-	burst.size     = Vector2(BURST_RADIUS * 2, BURST_RADIUS * 2)
-	burst.position = player.global_position - Vector2(BURST_RADIUS, BURST_RADIUS)
-	burst.z_index  = 10
-	player.get_parent().add_child(burst)
-	var tween = player.get_tree().create_tween()
-	tween.tween_property(burst, "modulate:a", 0.0, 0.3)
-	tween.tween_callback(burst.queue_free)
+	const ParticleBurst = preload("res://scripts/particle_burst.gd")
+	ParticleBurst.spawn(player.get_tree(), player.global_position, "fire_burst")

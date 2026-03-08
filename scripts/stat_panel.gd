@@ -34,6 +34,7 @@ var stat_pending_labels: Dictionary = {}
 var minus_buttons: Dictionary = {}
 var plus_buttons: Dictionary = {}
 var confirm_btn: Button
+var kd_label:    Label = null
 var player_ref = null
 
 func _ready() -> void:
@@ -179,6 +180,19 @@ func _build_ui() -> void:
 	confirm_btn.pressed.connect(_on_confirm)
 	window_root.add_child(confirm_btn)
 
+	# K/D stats row
+	kd_label = Label.new()
+	kd_label.add_theme_font_size_override("font_size", 9)
+	kd_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8, 1.0))
+	kd_label.add_theme_color_override("font_shadow_color", Color.BLACK)
+	kd_label.add_theme_constant_override("shadow_offset_x", 1)
+	kd_label.add_theme_constant_override("shadow_offset_y", 1)
+	kd_label.position = Vector2(0, 248) * SCALE
+	kd_label.size = Vector2(SPRITE_SIZE.x, 12) * SCALE
+	kd_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	kd_label.text = "K: 0   D: 0   KD: 0.00"
+	window_root.add_child(kd_label)
+
 	_refresh_ui()
 
 func _make_small_btn(label: String, color: Color) -> Button:
@@ -232,11 +246,26 @@ func _on_minus(stat: String) -> void:
 func _on_confirm() -> void:
 	if player_ref == null:
 		return
+	# Count points being spent before zeroing temp_alloc
+	var spent = 0
 	for stat in STATS:
+		spent += temp_alloc[stat]
 		base_stats[stat] += temp_alloc[stat]
 		temp_alloc[stat] = 0
 	player_ref.apply_stats(base_stats)
+	# Deduct from player so reopening the panel reads the correct remaining count
+	player_ref.stat_points = max(0, player_ref.stat_points - spent)
+	points_available = player_ref.stat_points
 	_refresh_ui()
+	# Tell server about the new stats so they're validated and persisted
+	var net = player_ref.get_tree().root.get_node_or_null("Network")
+	if net and net.is_network_connected():
+		net.send_spend_stats.rpc_id(1,
+			base_stats.hp,
+			base_stats.chakra,
+			base_stats.strength,
+			base_stats.dex,
+			base_stats.int)
 
 func _refresh_ui() -> void:
 	points_label.text = "Points Available: %d" % points_available
@@ -260,8 +289,15 @@ func _has_pending() -> bool:
 			return true
 	return false
 
+func update_kd(kills: int, deaths: int) -> void:
+	if kd_label == null:
+		return
+	var kd_ratio = float(kills) / float(max(deaths, 1))
+	kd_label.text = "K: %d   D: %d   KD: %.2f" % [kills, deaths, kd_ratio]
+
 func set_player(player) -> void:
 	player_ref = player
+	update_kd(player.kills, player.deaths)
 	base_stats = {
 		hp       = player.stat_hp,
 		chakra   = player.stat_chakra,

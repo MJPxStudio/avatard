@@ -6,6 +6,8 @@
 [sub_resource type="RectangleShape2D" id="RectangleShape2D_col"]
 size = Vector2(16, 12)
 
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_g2els"]
+
 [node name="Player" type="CharacterBody2D" unique_id=212132045 groups=["player"]]
 z_index = 1
 script = ExtResource("1_player")
@@ -19,3 +21,8 @@ shape = SubResource("RectangleShape2D_col")
 [node name="Camera2D" type="Camera2D" parent="." unique_id=1849579648 groups=["camera"]]
 position_smoothing_speed = 1.0
 script = ExtResource("2_camera")
+
+[node name="Attack_Range" type="Area2D" parent="." unique_id=1938898274]
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Attack_Range" unique_id=748115795]
+shape = SubResource("RectangleShape2D_g2els")

@@ -33,7 +33,7 @@ func _build_ui() -> void:
 	var root = Control.new()
 	root.size = SPRITE_SIZE * SCALE
 	root.position = Vector2(
-		(960 - SPRITE_SIZE.x * SCALE) / 2.0,
+		(960 - SPRITE_SIZE.x * SCALE) / 2.0 + 20,
 		540 - SPRITE_SIZE.y * SCALE - 4
 	)
 	add_child(root)

@@ -37,20 +37,25 @@ func _build() -> void:
 	desk.z_index  = 1
 	add_child(desk)
 
-	# Hokage NPC placeholder
-	var npc = ColorRect.new()
-	npc.color    = Color("e74c3c")
-	npc.size     = Vector2(20, 28)
-	npc.position = Vector2(-10, -H/2.0 + 20)
-	npc.z_index  = 2
-	add_child(npc)
-	var npc_label = Label.new()
-	npc_label.text     = "Hokage"
-	npc_label.position = Vector2(-20, -H/2.0 + 8)
-	npc_label.add_theme_font_size_override("font_size", 8)
-	npc_label.add_theme_color_override("font_color", Color("ffffff"))
-	npc_label.z_index  = 3
-	add_child(npc_label)
+	# Hokage NPC
+	var npc_script = load("res://scripts/npc.gd")
+	if npc_script:
+		var npc          = Node2D.new()
+		npc.set_script(npc_script)
+		npc.position     = Vector2(0, -H/2.0 + 24)
+		npc.z_index      = 2
+		npc.set("npc_name", "Hokage")
+		npc.set("dialogue", [
+			"The village is at peace for now.\nBut there is always more work to be done.",
+		])
+		add_child(npc)
+	# Visual placeholder until art assets arrive
+	var npc_vis      = ColorRect.new()
+	npc_vis.color    = Color("e74c3c")
+	npc_vis.size     = Vector2(20, 28)
+	npc_vis.position = Vector2(-10, -H/2.0 + 20)
+	npc_vis.z_index  = 1
+	add_child(npc_vis)
 
 	# Exit door back to village
 	var door = Area2D.new()
@@ -59,7 +64,7 @@ func _build() -> void:
 	door.collision_mask    = 1
 	door.destination_scene = "res://scenes/village.tscn"
 	door.destination_zone  = "village"
-	door.spawn_position    = Vector2(0, -380)
+	door.spawn_position    = Vector2(0, -460)
 	var shape = CollisionShape2D.new()
 	var rect  = RectangleShape2D.new()
 	rect.size  = Vector2(32, 20)

@@ -26,12 +26,25 @@ const HUD_PAD     = 6   # screen edge padding
 var hp_clip:      Control
 var chakra_clip:  Control
 var exp_clip:     Control
+var _exp_tooltip: Panel  = null
+var _exp_cur:     int    = 0
+var _exp_max:     int    = 100
+var _exp_lbl:     Label  = null
 var level_label:  Label
 var hp_label:     Label
 var chakra_label: Label
 
 func _ready() -> void:
 	_build_hud()
+	_build_quest_hud()
+
+func _build_quest_hud() -> void:
+	var qhud = Control.new()
+	qhud.set_script(load("res://scripts/quest_hud.gd"))
+	qhud.name = "QuestHUD"
+	qhud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	qhud.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(qhud)
 
 func _build_hud() -> void:
 	var root = Control.new()
@@ -61,6 +74,36 @@ func _build_hud() -> void:
 	# ── EXP bar ──
 	var exp_tex = load("res://sprites/hud/exp_fill.png") as Texture2D
 	exp_clip = _make_bar_clip(root, exp_tex, EXP_Y, EXP_H, BAR_W)
+
+	# Exp hover area (transparent Control over the bar, captures mouse)
+	var exp_hover = Control.new()
+	exp_hover.position = Vector2(HUD_PAD + BAR_X * SCALE, HUD_PAD + EXP_Y * SCALE)
+	exp_hover.size = Vector2(BAR_W * SCALE, EXP_H * SCALE + 4)
+	exp_hover.mouse_filter = Control.MOUSE_FILTER_STOP
+	root.add_child(exp_hover)
+	exp_hover.mouse_entered.connect(_on_exp_hover_enter)
+	exp_hover.mouse_exited.connect(_on_exp_hover_exit)
+
+	# Tooltip panel (hidden by default)
+	_exp_tooltip = Panel.new()
+	var ts = StyleBoxFlat.new()
+	ts.bg_color = Color(0.1, 0.1, 0.1, 0.92)
+	ts.border_color = Color(0.6, 0.6, 0.6, 1.0)
+	ts.set_border_width_all(1)
+	ts.set_corner_radius_all(4)
+	ts.anti_aliasing = true
+	_exp_tooltip.add_theme_stylebox_override("panel", ts)
+	_exp_tooltip.size = Vector2(80, 18)
+	_exp_tooltip.visible = false
+	_exp_tooltip.z_index = 20
+	root.add_child(_exp_tooltip)
+	_exp_lbl = Label.new()
+	_exp_lbl.position = Vector2(4, 2)
+	_exp_lbl.size = Vector2(72, 14)
+	_exp_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_exp_lbl.add_theme_font_size_override("font_size", 9)
+	_exp_lbl.add_theme_color_override("font_color", Color("ffffff"))
+	_exp_tooltip.add_child(_exp_lbl)
 
 	# ── Level label (inside circle area on left of frame) ──
 	level_label = Label.new()
@@ -122,9 +165,27 @@ func update_chakra(current: int, maximum: int) -> void:
 	chakra_clip.size.x = BAR_W * SCALE * pct
 	chakra_label.text = "%d/%d" % [current, maximum]
 
+func _on_exp_hover_enter() -> void:
+	if _exp_tooltip == null:
+		return
+	# Position tooltip just above the bar
+	_exp_tooltip.position = Vector2(HUD_PAD + BAR_X * SCALE, HUD_PAD + (EXP_Y - 22) * SCALE)
+	if _exp_lbl:
+		_exp_lbl.text = "%d / %d XP" % [_exp_cur, _exp_max]
+	_exp_tooltip.visible = true
+
+func _on_exp_hover_exit() -> void:
+	if _exp_tooltip:
+		_exp_tooltip.visible = false
+
 func update_exp(current: int, maximum: int) -> void:
+	_exp_cur = current
+	_exp_max = maximum
 	var pct = float(current) / float(maximum)
 	exp_clip.size.x = BAR_W * SCALE * pct
+	# Update tooltip text if it's currently visible
+	if _exp_tooltip and _exp_tooltip.visible and _exp_lbl:
+		_exp_lbl.text = "%d / %d XP" % [current, maximum]
 
 func update_level(lv: int) -> void:
 	level_label.text = str(lv)

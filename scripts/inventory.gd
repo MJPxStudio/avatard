@@ -45,6 +45,8 @@ var drag_bar:     Control
 var bg_texture:   TextureRect
 var slot_buttons: Array = []
 
+var equip_panel_ref: Node = null
+
 # Drag state
 var is_dragging:    bool    = false
 var drag_offset:    Vector2 = Vector2.ZERO
@@ -62,10 +64,13 @@ func _ready() -> void:
 	_build_ui()
 	visible = false
 
-	# Test items — remove later
-	add_item({"id": "potion", "name": "Potion", "quantity": 5, "stackable": true, "icon_path": ""})
-	add_item({"id": "kunai", "name": "Kunai", "quantity": 10, "stackable": true, "icon_path": ""})
-	add_item({"id": "sword", "name": "Sword", "quantity": 1, "stackable": false, "icon_path": ""})
+	# Test items
+	add_item({"id": "potion",     "name": "Potion",     "quantity": 5,  "stackable": true,  "icon_path": ""})
+	add_item({"id": "kunai",      "name": "Kunai",      "quantity": 10, "stackable": true,  "icon_path": ""})
+	add_item({"id": "iron_sword", "name": "Iron Sword", "quantity": 1,  "stackable": false, "icon_path": "",
+		"equip_slot": "weapon", "stat_bonuses": {"strength": 5, "dex": 2}})
+	add_item({"id": "leather_helm", "name": "Leather Helm", "quantity": 1, "stackable": false, "icon_path": "",
+		"equip_slot": "head", "stat_bonuses": {"hp": 3}})
 
 func _build_ui() -> void:
 	# Root control — draggable window
@@ -191,7 +196,6 @@ func _on_slot_clicked(index: int) -> void:
 
 func _on_slot_input(index: int, event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_RIGHT and event.pressed:
-		# Right click — drop one from stack or cancel held
 		if not held_item.is_empty():
 			# Cancel drag, return to original slot
 			if held_from_slot >= 0:
@@ -200,6 +204,17 @@ func _on_slot_input(index: int, event: InputEvent) -> void:
 			held_item = {}
 			held_from_slot = -1
 			held_label.visible = false
+		elif slots[index] != null and slots[index].get("equip_slot", "") != "":
+			# Right-click equippable item — send to equip panel
+			if equip_panel_ref:
+				var item = slots[index].duplicate()
+				var displaced = equip_panel_ref.equip_item(item)
+				slots[index] = null
+				_refresh_slot(index)
+				# If something was in that slot, put it back in inventory
+				if not displaced.is_empty():
+					slots[index] = displaced
+					_refresh_slot(index)
 
 func _process(_delta: float) -> void:
 	if not held_item.is_empty():
@@ -215,7 +230,14 @@ func _refresh_slot(index: int) -> void:
 		btn.tooltip_text = ""
 	else:
 		lbl.text = str(item.quantity) if item.get("stackable", true) and item.quantity > 1 else ""
-		btn.tooltip_text = item.name
+		var tip = item.name
+		var bonuses = item.get("stat_bonuses", {})
+		for k in bonuses:
+			if bonuses[k] != 0:
+				tip += "\n  +%d %s" % [bonuses[k], k.capitalize()]
+		if item.get("equip_slot", "") != "":
+			tip += "\n[Right-click to equip]"
+		btn.tooltip_text = tip
 		if item.get("icon_path", "") != "":
 			btn.icon = load(item.icon_path)
 
