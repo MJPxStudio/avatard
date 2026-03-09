@@ -74,6 +74,10 @@ func _ready() -> void:
 	if FileAccess.file_exists(DEV_CONFIG):
 		_load_config(DEV_CONFIG, true)
 		_emit_config_ready()
+	elif DisplayServer.get_name() == "headless":
+		# Running as server — no need to fetch remote config
+		_load_config(LOCAL_CONFIG, false)
+		_emit_config_ready()
 	else:
 		_load_config(LOCAL_CONFIG, false)
 		_fetch_remote_config()
