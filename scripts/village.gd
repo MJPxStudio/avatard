@@ -56,11 +56,11 @@ func _build_village() -> void:
 	portal.position = Vector2(800, 0)
 	add_child(portal)
 
-	# --- BOUNDARY WALLS ---
-	_make_wall(Vector2(0, -710),   Vector2(2000, 40))   # top
-	_make_wall(Vector2(0, 710),    Vector2(2000, 40))   # bottom
-	_make_wall(Vector2(-1010, 0),  Vector2(40, 1400))   # left
-	_make_wall(Vector2(1010, 0),   Vector2(40, 1400))   # right
+	# --- BOUNDARY WALLS --- (temporarily disabled for map scouting)
+	#_make_wall(Vector2(0, -710),   Vector2(2000, 40))   # top
+	#_make_wall(Vector2(0, 710),    Vector2(2000, 40))   # bottom
+	#_make_wall(Vector2(-1010, 0),  Vector2(40, 1400))   # left
+	#_make_wall(Vector2(1010, 0),   Vector2(40, 1400))   # right
 
 func _make_npc(pos: Vector2, npc_name_val: String, default_dialogue: Array) -> void:
 	var npc_script = load("res://scripts/npc.gd")
