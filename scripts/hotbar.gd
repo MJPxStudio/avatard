@@ -144,6 +144,15 @@ func _use_selected_slot() -> void:
 	if slot is AbilityBase:
 		if player_ref != null:
 			slot.activate(player_ref)
+	elif slot is Dictionary and slot.has("use_effect"):
+		# Consumable item
+		if player_ref and player_ref.has_method("use_item"):
+			player_ref.use_item(slot)
+			# Clear slot if item is now gone from inventory
+			var inv = player_ref.inventory if player_ref.get("inventory") != null else null
+			if inv and not inv.has_item(slot.get("id", ""), 1):
+				slots[selected_slot] = null
+				_refresh_slot(selected_slot)
 
 func _on_slot_clicked(index: int) -> void:
 	selected_slot = index
@@ -202,6 +211,25 @@ func get_selected_item() -> Dictionary:
 	if slot == null or slot is AbilityBase:
 		return {}
 	return slot
+
+func get_root_node() -> Control:
+	return get_child(0)
+
+func try_accept_drop(item: Dictionary, global_pos: Vector2) -> bool:
+	# Only consumables go on hotbar
+	if item.get("use_effect") == null:
+		return false
+	var root = get_root_node()
+	if root == null:
+		return false
+	for i in range(10):
+		var btn = slot_buttons[i]
+		var rect = Rect2(btn.global_position, btn.size)
+		if rect.has_point(global_pos):
+			slots[i] = item.duplicate()
+			_refresh_slot(i)
+			return true
+	return false
 
 func set_slot(index: int, item_data) -> void:
 	slots[index] = item_data

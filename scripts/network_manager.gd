@@ -40,6 +40,7 @@ signal damage_received_client(amount, knockback_dir)
 signal enemy_killed_client(xp, gold, item_drop)
 signal xp_gained_client(current_exp, max_exp, amount)
 signal level_up_client(new_level, current_exp, max_exp, stat_points, new_max_hp, str_, hp_, chakra_, dex_, int_)
+signal rank_up_client(new_rank)
 signal hit_confirmed(position, amount)
 signal ability_hit_confirmed(position, amount)
 signal equip_update_received(peer_id, equipped)
@@ -312,6 +313,14 @@ func send_equip_update(equipped: Dictionary) -> void:
 func send_appearance_update(appearance: Dictionary) -> void:
 	appearance_update_received.emit(multiplayer.get_remote_sender_id(), appearance)
 
+@rpc("any_peer", "reliable")
+func send_use_item(item_id: String) -> void:
+	item_used_received.emit(multiplayer.get_remote_sender_id(), item_id)
+
+@rpc("authority", "reliable")
+func notify_item_result(success: bool, message: String, new_hp: int = -1, new_max_hp: int = -1) -> void:
+	item_result_client.emit(success, message, new_hp, new_max_hp)
+
 # ── Dungeon RPCs ───────────────────────────────────────────────────────────
 @rpc("any_peer", "reliable")
 func request_dungeon_enter(dungeon_id: String) -> void:
@@ -397,6 +406,8 @@ func send_spend_stats(hp: int, chakra: int, strength: int, dex: int, int_: int) 
 	spend_stats_server.emit(multiplayer.get_remote_sender_id(), hp, chakra, strength, dex, int_)
 
 signal spend_stats_server(peer_id, hp, chakra, strength, dex, int_)
+signal item_used_received(peer_id: int, item_id: String)
+signal item_result_client(success: bool, message: String, new_hp: int, new_max_hp: int)
 
 @rpc("authority", "reliable")
 func notify_party_xp_shared(members: Array, amount: int) -> void:
@@ -413,6 +424,10 @@ func notify_level_up(new_level: int, current_exp: int, max_exp: int, stat_points
 		str_: int, hp_: int, chakra_: int, dex_: int, int__: int) -> void:
 	level_up_client.emit(new_level, current_exp, max_exp, stat_points, new_max_hp,
 		str_, hp_, chakra_, dex_, int__)
+
+@rpc("authority", "reliable")
+func notify_rank_up(new_rank: String) -> void:
+	rank_up_client.emit(new_rank)
 
 @rpc("any_peer", "reliable")
 func send_chat(channel: String, target_name: String, text: String) -> void:

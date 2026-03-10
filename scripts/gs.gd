@@ -135,9 +135,18 @@ func _update_remote_players(states: Dictionary) -> void:
 				var state = states[peer_id]
 				lp.kills  = state.get("kills",  lp.kills)
 				lp.deaths = state.get("deaths", lp.deaths)
-				# Refresh stat panel if it's open
-				if lp.stat_panel and is_instance_valid(lp.stat_panel) and lp.stat_panel.visible:
-					lp.stat_panel.update_kd(lp.kills, lp.deaths)
+				# Apply gear bonuses from server
+				lp.gear_str    = state.get("gear_str",    0)
+				lp.gear_hp     = state.get("gear_hp",     0)
+				lp.gear_chakra = state.get("gear_chakra", 0)
+				lp.gear_dex    = state.get("gear_dex",    0)
+				lp.gear_int    = state.get("gear_int",    0)
+				# Refresh char info if it's open
+				var _ci = lp.char_info if lp.get("char_info") != null else lp.stat_panel
+				if _ci and is_instance_valid(_ci) and _ci.visible:
+					_ci.update_kd(lp.kills, lp.deaths)
+					if _ci.has_method("set_player"):
+						_ci.set_player(lp)
 			continue
 		var state    = states[peer_id]
 		var their_zone = state.get("zone", "")
@@ -163,6 +172,8 @@ func _update_remote_players(states: Dictionary) -> void:
 			if rp.has_method("set_level"):
 				rp.set_level(state.get("level", 1))
 			rp.set_party_member(state.get("username", "") in my_party)
+			if rp.has_method("set_rank"):
+				rp.set_rank(state.get("rank", "Academy Student"))
 			if rp.has_method("apply_appearance"):
 				rp.apply_appearance(state.get("appearance", {}))
 			if rp.has_method("apply_equipped"):
@@ -180,6 +191,8 @@ func _update_remote_players(states: Dictionary) -> void:
 			if rp_node.has_method("set_level"):
 				rp_node.set_level(state.get("level", 1))
 			rp_node.set_party_member(state.get("username", "") in my_party)
+			if rp_node.has_method("set_rank"):
+				rp_node.set_rank(state.get("rank", "Academy Student"))
 			if rp_node.has_method("apply_appearance"):
 				rp_node.apply_appearance(state.get("appearance", {}))
 			if rp_node.has_method("apply_equipped"):

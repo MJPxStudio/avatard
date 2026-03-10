@@ -20,6 +20,8 @@ config/icon="res://icon.svg"
 Network="*uid://l634a6i4nb1j"
 Database="*uid://d0g8lm43v5qqf"
 GameState="*uid://bc0smyxf3dbq5"
+ItemDB="*uid://b3hwjd3ea67sy"
+RankDB="*uid://dxlb22veuyc1q"
 
 [display]
 

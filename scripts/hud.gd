@@ -31,6 +31,7 @@ var _exp_cur:     int    = 0
 var _exp_max:     int    = 100
 var _exp_lbl:     Label  = null
 var level_label:  Label
+var rank_label:   Label
 var hp_label:     Label
 var chakra_label: Label
 
@@ -118,6 +119,19 @@ func _build_hud() -> void:
 	level_label.add_theme_constant_override("shadow_offset_y", 1)
 	root.add_child(level_label)
 
+	# ── Rank label (below the HUD frame) ──
+	rank_label = Label.new()
+	rank_label.text = "Academy Student"
+	rank_label.position = Vector2(HUD_PAD, HUD_PAD + FRAME_H * SCALE + 2)
+	rank_label.size = Vector2(FRAME_W * SCALE, 12)
+	rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	rank_label.add_theme_font_size_override("font_size", 9)
+	rank_label.add_theme_color_override("font_color", Color("aaaaaa"))
+	rank_label.add_theme_color_override("font_shadow_color", Color(0,0,0,1))
+	rank_label.add_theme_constant_override("shadow_offset_x", 1)
+	rank_label.add_theme_constant_override("shadow_offset_y", 1)
+	root.add_child(rank_label)
+
 func _make_bar_clip(parent: Control, tex: Texture2D, sprite_y: int, sprite_h: int, full_w: int) -> Control:
 	# Clip container — resize width to control fill %
 	var clip = Control.new()
@@ -189,3 +203,7 @@ func update_exp(current: int, maximum: int) -> void:
 
 func update_level(lv: int) -> void:
 	level_label.text = str(lv)
+
+func update_rank(rank_name: String, rank_color: Color) -> void:
+	rank_label.text = rank_name
+	rank_label.add_theme_color_override("font_color", rank_color)

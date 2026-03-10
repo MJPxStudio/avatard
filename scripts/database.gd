@@ -27,13 +27,24 @@ func load_player(username: String) -> Dictionary:
 				if parsed.has("position") and parsed["position"] is Array:
 					var p = parsed["position"]
 					parsed["position"] = Vector2(p[0], p[1])
-				# Deserialize Color tint values in equipped items
+				# Rebuild equipped items from ItemDB so fields are always current.
+				# Only the tint (runtime cosmetic state) is preserved from save data.
 				if parsed.has("equipped") and parsed["equipped"] is Dictionary:
+					var rebuilt: Dictionary = {}
 					for slot in parsed["equipped"]:
-						var item = parsed["equipped"][slot]
-						if item is Dictionary and item.has("tint") and item["tint"] is Array:
-							var c = item["tint"]
-							item["tint"] = Color(c[0], c[1], c[2], c[3])
+						var saved = parsed["equipped"][slot]
+						if not saved is Dictionary:
+							continue
+						var item_id: String = saved.get("id", "")
+						if item_id == "" or not ItemDB.exists(item_id):
+							continue
+						# Fresh definition from DB — stats, paths, etc. always up to date
+						var fresh = ItemDB.get_item(item_id)
+						# Restore saved tint if present
+						if saved.has("tint"):
+							fresh = ItemDB.apply_saved_tint(fresh, saved["tint"])
+						rebuilt[slot] = fresh
+					parsed["equipped"] = rebuilt
 				print("[DB] Loaded player: %s" % username)
 				return parsed
 	# New player defaults
@@ -61,13 +72,23 @@ func save_player(username: String, data: Dictionary) -> void:
 	if saved.has("position") and saved["position"] is Vector2:
 		var p = saved["position"]
 		saved["position"] = [p.x, p.y]
-	# Serialize Color tint values in equipped items
+	# For equipped items: save only id + tint. All other fields are rebuilt
+	# from ItemDB on load, so outdated stat/path data never persists.
 	if saved.has("equipped") and saved["equipped"] is Dictionary:
+		var slim: Dictionary = {}
 		for slot in saved["equipped"]:
 			var item = saved["equipped"][slot]
-			if item is Dictionary and item.has("tint") and item["tint"] is Color:
-				var c: Color = item["tint"]
-				item["tint"] = [c.r, c.g, c.b, c.a]
+			if not item is Dictionary:
+				continue
+			var entry: Dictionary = {"id": item.get("id", "")}
+			if item.has("tint"):
+				var t = item["tint"]
+				if t is Color:
+					entry["tint"] = [t.r, t.g, t.b, t.a]
+				elif t is Array:
+					entry["tint"] = t  # already serialized
+			slim[slot] = entry
+		saved["equipped"] = slim
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(saved, "\t"))

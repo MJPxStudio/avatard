@@ -193,7 +193,7 @@ func _open_transmog_picker(player: Node) -> void:
 	if equip_panel != null:
 		for i in range(equip_panel.slots.size()):
 			var item = equip_panel.slots[i]
-			if item != null and item.get("sprite_folder", "") != "":
+			if item != null and item.get("sprite_folder", "") != "" and item.get("transmog", false):
 				equippable_slots.append({"source": "equip", "index": i, "item": item})
 
 	if equippable_slots.is_empty():

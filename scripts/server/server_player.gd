@@ -28,6 +28,8 @@ var deaths:        int        = 0
 var level:         int        = 1
 var exp:           int        = 0
 var max_exp:       int        = 100
+var rank:          String     = "Academy Student"
+var appearance:    Dictionary = {}  # hair_folder, hair_color
 var stat_hp:       int        = 5
 var stat_chakra:   int        = 5
 var stat_dex:      int        = 5
@@ -54,8 +56,8 @@ var stat_strength: int        = 5
 var _loaded_data:  Dictionary = {}
 
 # Equipment
-var equipped:   Dictionary = {}   # slot_key -> item dict from client
-var appearance: Dictionary = {}   # hair_folder, hair_color
+var equipped:    Dictionary = {}   # slot_key -> item dict from client
+var is_poisoned: bool = false
 # Gear bonuses (recalculated on equip change)
 var _gear_str:    int = 0
 var _gear_hp:     int = 0
@@ -80,18 +82,27 @@ func grant_xp(amount: int) -> void:
 	exp += amount
 	while exp >= max_exp:
 		exp    -= max_exp
+		var old_rank: String = rank
 		level  += 1
 		max_exp = xp_for_level(level)
 		stat_points += 3
 		# Every level: +10 max_hp passively — stats are spent manually by the player
 		max_hp += 10
 		hp      = max_hp  # full heal on level up
-		print("[SERVER] %s leveled up to %d!" % [username, level])
-		# Notify client: include all current stat values so client never drifts out of sync
+		rank    = RankDB.get_rank_name(level)
+		print("[SERVER] %s leveled up to %d! (rank: %s)" % [username, level, rank])
 		var net = get_tree().root.get_node_or_null("Network")
 		if net:
 			net.notify_level_up.rpc_id(peer_id, level, exp, max_exp, stat_points, max_hp,
 				stat_strength, stat_hp, stat_chakra, stat_dex, stat_int)
+			# Notify rank-up if rank changed
+			if rank != old_rank:
+				print("[SERVER] %s ranked up to %s!" % [username, rank])
+				net.notify_rank_up.rpc_id(peer_id, rank)
+				# Broadcast to all players via server_main
+				var sm = get_tree().root.get_node_or_null("ServerMain")
+				if sm and sm.has_method("broadcast_rank_up"):
+					sm.broadcast_rank_up(username, rank)
 	# Always sync current exp progress
 	var net = get_tree().root.get_node_or_null("Network")
 	if net:
@@ -256,6 +267,30 @@ func recalculate_gear_stats() -> void:
 
 func effective_strength() -> int:
 	return stat_strength + _gear_str
+
+func use_consumable(item_id: String) -> Dictionary:
+	# Returns {success, message, new_hp}
+	var item = ItemDB.get_item(item_id)
+	if item.is_empty():
+		return {success=false, message="Unknown item."}
+	var effect = item.get("use_effect", {})
+	if effect.is_empty():
+		return {success=false, message="%s cannot be used." % item.get("name","Item")}
+	var etype = effect.get("type", "")
+	match etype:
+		"heal_hp":
+			if hp >= max_hp:
+				return {success=false, message="HP is already full."}
+			var amount = effect.get("amount", 50)
+			hp = mini(hp + amount, max_hp)
+			return {success=true, message="Restored %d HP." % amount, new_hp=hp, new_max_hp=max_hp}
+		"cure_poison":
+			if not is_poisoned:
+				return {success=false, message="You are not poisoned."}
+			is_poisoned = false
+			return {success=true, message="Cured poison.", new_hp=hp, new_max_hp=max_hp}
+		_:
+			return {success=false, message="Unknown effect."}
 
 func get_save_data() -> Dictionary:
 	var data         = _loaded_data.duplicate()

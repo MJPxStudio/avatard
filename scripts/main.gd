@@ -31,6 +31,7 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	print("[MAIN] saved zone: %s" % str(player_data.get("zone", "MISSING")))
 	print("[MAIN] saved pos: %s" % str(player_data.get("position", "MISSING")))
 	var player = $Player
+	player.username     = player_data.get("username", "")
 	player.stat_hp       = player_data.get("stat_hp", 5)
 	player.stat_chakra   = player_data.get("stat_chakra", 5)
 	player.stat_strength = player_data.get("stat_str", 5)
@@ -40,6 +41,7 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	player.quest_state   = player_data.get("quest_state", {})
 	player.level         = player_data.get("level", 1)
 	player.current_exp   = player_data.get("exp", 0)
+	player.current_hp    = player_data.get("hp", -1)  # -1 means full — resolved after apply_stats
 	# max_exp must match server formula: 100 * 1.5^(level-1)
 	var _me = 100
 	for _i in range(player.level - 1):
@@ -79,7 +81,7 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	_setup_equip_panel()
 	_restore_equipped(player_data.get("equipped", {}))
 	_setup_dungeon_hud()
-	_setup_stat_panel()
+	_setup_char_info()
 	_setup_target_hud()
 	_setup_chat()
 	_setup_minimap()
@@ -356,11 +358,13 @@ func _setup_equip_panel() -> void:
 	if $Player.inventory:
 		$Player.inventory.equip_panel_ref = equip
 
-func _setup_stat_panel() -> void:
-	var stat = load("res://scenes/stat_panel.tscn").instantiate()
-	add_child(stat)
-	$Player.stat_panel = stat
-	stat.set_player($Player)
+func _setup_char_info() -> void:
+	var ci = load("res://scenes/stat_panel.tscn").instantiate()
+	ci.set_script(load("res://scripts/char_info.gd"))
+	add_child(ci)
+	$Player.char_info = ci
+	$Player.stat_panel = ci  # keep compat alias
+	ci.set_player($Player)
 
 func _setup_damage_numbers() -> void:
 	var dn = Node.new()

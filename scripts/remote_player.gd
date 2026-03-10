@@ -16,6 +16,7 @@ var sprite:          AnimatedSprite2D = null
 var _death_timer:    float = 0.0
 var _death_label:    Label = null
 var _name_label:     Label = null
+var _rank_label:     Label = null
 var _chat_bubble:    Node  = null
 var _bubble_tween:   Tween = null
 var _level_label:    Label = null
@@ -248,6 +249,19 @@ func set_username(uname: String) -> void:
 		_level_label.visible  = false  # level shown in target HUD only, not nameplate
 		add_child(_level_label)
 	_name_label.text = uname
+	# Rank label — just below the name label
+	if _rank_label == null:
+		_rank_label = Label.new()
+		_rank_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_rank_label.z_index              = 10
+		_rank_label.add_theme_font_size_override("font_size", 7)
+		_rank_label.add_theme_color_override("font_color",        Color("aaaaaa"))
+		_rank_label.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 1.0))
+		_rank_label.add_theme_constant_override("shadow_offset_x", 1)
+		_rank_label.add_theme_constant_override("shadow_offset_y", 1)
+		_rank_label.size     = Vector2(80, 10)
+		_rank_label.position = Vector2(-40, -31)  # just below name label
+		add_child(_rank_label)
 
 func _attach_outline_shader(spr: Node) -> void:
 	var mat    = ShaderMaterial.new()
@@ -279,6 +293,16 @@ void fragment() {
 func set_targeted(on: bool) -> void:
 	_is_targeted = on
 	_update_outline()
+
+func set_rank(rank_name: String) -> void:
+	if _rank_label == null:
+		return
+	_rank_label.text = rank_name
+	var lv: int = 1
+	# Derive level from rank name for color (rank_label exists before level is known)
+	_rank_label.add_theme_color_override("font_color", RankDB.get_rank_color(
+		RankDB.RANKS[RankDB.rank_index(rank_name)]["min_level"] if RankDB.rank_index(rank_name) >= 0 else 1
+	))
 
 func set_party_member(on: bool) -> void:
 	_is_party_member = on

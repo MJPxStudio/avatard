@@ -62,6 +62,7 @@ func _ready() -> void:
 	Network.facing_received.connect(_on_facing_received)
 	Network.ability_used_received.connect(_on_ability_used)
 	Network.equip_update_received.connect(_on_equip_update)
+	Network.item_used_received.connect(_on_item_used)
 	Network.appearance_update_received.connect(_on_appearance_update)
 	Network.dungeon_enter_requested.connect(_on_dungeon_enter_requested)
 	Network.dungeon_exit_requested.connect(_on_dungeon_exit_requested)
@@ -193,6 +194,13 @@ func _on_appearance_update(peer_id: int, appearance: Dictionary) -> void:
 		return
 	sp.appearance = appearance
 
+func _on_item_used(peer_id: int, item_id: String) -> void:
+	var sp = server_players.get(peer_id, null)
+	if not sp:
+		return
+	var result = sp.use_consumable(item_id)
+	Network.notify_item_result.rpc_id(peer_id, result.get("success", false), result.get("message", ""), result.get("new_hp", -1), result.get("new_max_hp", -1))
+
 func _on_ability_used(peer_id: int, ability_name: String, data: Dictionary) -> void:
 	if not server_players.has(peer_id):
 		return
@@ -288,6 +296,7 @@ func _on_login_request(peer_id: int, username: String) -> void:
 	sp.level         = player_data.get("level",       1)
 	sp.exp           = player_data.get("exp",         0)
 	sp.max_exp       = ServerPlayer.xp_for_level(sp.level)
+	sp.rank          = RankDB.get_rank_name(sp.level)
 	sp.stat_points   = player_data.get("stat_points", 0)
 	sp.max_hp        = player_data.get("max_hp",      100)
 	sp.hp            = player_data.get("hp",          sp.max_hp)
@@ -420,9 +429,15 @@ func _broadcast_players() -> void:
 				"kills":      sp.kills      if sp else 0,
 				"deaths":     sp.deaths     if sp else 0,
 				"level":      sp.level      if sp else 1,
+				"rank":       sp.rank       if sp else "Academy Student",
 				"facing_dir": sp.facing_dir if sp else "down",
 				"party_id":   _party_in_party.get(peer_id, -1),
 				"equipped":   sp.equipped   if sp else {},
+				"gear_str":   sp._gear_str    if sp else 0,
+				"gear_hp":    sp._gear_hp     if sp else 0,
+				"gear_chakra":sp._gear_chakra if sp else 0,
+				"gear_dex":   sp._gear_dex    if sp else 0,
+				"gear_int":   sp._gear_int    if sp else 0,
 				"appearance": sp.appearance if sp else {},
 			}
 	# Send each client only their own state + same-zone players
@@ -538,6 +553,12 @@ func _on_chat(peer_id: int, channel: String, target_name: String, text: String) 
 				var pdata = Network.players[pid]
 				if pdata.get("username", "") != "" and pdata.get("zone", "village") == sender_zone:
 					Network.receive_chat.rpc_id(pid, "zone", sender_name, text)
+
+func broadcast_rank_up(username: String, new_rank: String) -> void:
+	var msg = "★ %s has achieved the rank of %s!" % [username, new_rank]
+	for pid in Network.players:
+		if Network.players[pid].get("username", "") != "":
+			Network.receive_chat.rpc_id(pid, "system", "", msg)
 
 func broadcast_kill(killer_name: String, victim_name: String) -> void:
 	# Increment killer's kill count

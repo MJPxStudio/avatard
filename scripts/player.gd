@@ -75,6 +75,7 @@ var current_chakra: int = 100
 var level:          int = 1
 var current_exp:    int = 0
 var max_exp:        int = 100
+var rank:           String = "Academy Student"
 
 var hud           = null
 var inventory     = null
@@ -93,7 +94,9 @@ var party_invite_popup  = null
 var hotbar     = null
 var equip_panel  = null
 var dungeon_hud  = null
-var stat_panel  = null
+var stat_panel  = null  # kept for compat
+var char_info   = null
+var username:   String = ""
 var target_hud  = null
 var chat        = null
 var _chat_bubble:  Node  = null
@@ -105,6 +108,11 @@ var stat_strength: int = 5
 var stat_dex:      int = 5
 var stat_int:      int = 5
 var stat_points:   int = 0
+var gear_str:      int = 0
+var gear_hp:       int = 0
+var gear_chakra:   int = 0
+var gear_dex:      int = 0
+var gear_int:      int = 0
 var quest_state:   Dictionary = {}   # local mirror of server quest_state
 var quest_hud:     Node = null
 
@@ -135,6 +143,21 @@ func _ready() -> void:
 	_build_hair_sprite()
 	_build_equip_layers()
 	_build_attack_vis()
+	_build_rank_label()
+
+func _build_rank_label() -> void:
+	var lbl = Label.new()
+	lbl.name = "RankLabel"
+	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lbl.z_index = 10
+	lbl.add_theme_font_size_override("font_size", 7)
+	lbl.add_theme_color_override("font_shadow_color", Color(0.0, 0.0, 0.0, 1.0))
+	lbl.add_theme_constant_override("shadow_offset_x", 1)
+	lbl.add_theme_constant_override("shadow_offset_y", 1)
+	lbl.size = Vector2(80, 10)
+	lbl.position = Vector2(-40, -52)  # just above the name area
+	add_child(lbl)
+	_update_rank_label()
 
 func connect_network_signals() -> void:
 	var gs = get_tree().root.get_node_or_null("GameState")
@@ -157,6 +180,10 @@ func connect_network_signals() -> void:
 		net.enemy_killed_client.connect(_on_enemy_killed)
 	if net and not net.party_xp_shared_client.is_connected(_on_party_xp_shared):
 		net.party_xp_shared_client.connect(_on_party_xp_shared)
+	if net and not net.rank_up_client.is_connected(_on_rank_up):
+		net.rank_up_client.connect(_on_rank_up)
+	if net and not net.item_result_client.is_connected(_on_item_result):
+		net.item_result_client.connect(_on_item_result)
 
 func _on_server_damage(amount: int, knockback_dir: Vector2) -> void:
 	# amount=0 is the server's respawn signal after death timer
@@ -229,6 +256,10 @@ func _update_hud() -> void:
 	hud.update_chakra(current_chakra, max_chakra)
 	hud.update_exp(current_exp, max_exp)
 	hud.update_level(level)
+	if hud.has_method("update_rank"):
+		hud.update_rank(rank, RankDB.get_rank_color(level))
+	if char_info != null and char_info.visible and char_info.has_method("update_xp"):
+		char_info.update_xp(current_exp, max_exp)
 
 func _build_animations() -> void:
 	var sf   := SpriteFrames.new()
@@ -517,8 +548,11 @@ func _physics_process(delta: float) -> void:
 			if equip_panel != null and inventory != null:
 				equip_panel.visible = inventory.visible
 
-		if Input.is_action_just_pressed("stat_panel") and stat_panel != null:
-			stat_panel.toggle()
+		if Input.is_action_just_pressed("stat_panel"):
+			if char_info != null:
+				char_info.toggle()
+			elif stat_panel != null:
+				stat_panel.toggle()
 
 	# Auto-face locked target (always runs so lock releases cleanly)
 	if locked_target != null and is_instance_valid(locked_target) and not is_attacking:
@@ -770,11 +804,12 @@ func apply_stats(stats: Dictionary) -> void:
 	stat_dex      = stats.dex
 	stat_int      = stats.int
 	# stat_points intentionally NOT reset here — caller is responsible for setting it
-	max_hp        = 100 + stat_hp * 5
+	max_hp        = 100 + stat_hp * 10 + (level - 1) * 10
 	max_chakra    = 100 + stat_chakra * 3
 	dodge_chance  = stat_dex * 0.002
 	cd_reduction  = stat_dex * 0.001
-	current_hp     = min(current_hp, max_hp)
+	# -1 means "not yet set" (new character) — spawn at full
+	current_hp     = max_hp if current_hp < 0 else min(current_hp, max_hp)
 	current_chakra = min(current_chakra, max_chakra)
 	_sync_max_hp_to_server()
 	_update_hud()
@@ -888,10 +923,58 @@ func _on_level_up(new_level: int, cur_exp: int, m_exp: int, points: int, new_max
 	# Server passively raises max_hp on level-up
 	max_hp        = new_max_hp
 	current_hp    = new_max_hp  # full heal
+	rank          = RankDB.get_rank_name(level)
+	_update_rank_label()
 	_update_hud()
-	if stat_panel != null:
+	if char_info != null:
+		char_info.set_player(self)
+	elif stat_panel != null:
 		stat_panel.set_player(self)
 	_show_level_up_effect()
+
+func use_item(item: Dictionary) -> void:
+	# Called by hotbar or inventory. Sends to server for validation.
+	var item_id = item.get("id", "")
+	if item_id == "":
+		return
+	var effect = item.get("use_effect", {})
+	if effect.is_empty():
+		return
+	# Block heal items client-side if already full — no need to hit server
+	if effect.get("type", "") == "heal_hp" and current_hp >= max_hp:
+		if chat and chat.has_method("add_system_message"):
+			chat.add_system_message("HP is already full.")
+		return
+	var net = get_tree().root.get_node_or_null("Network")
+	if net and net.is_network_connected():
+		net.send_use_item.rpc_id(1, item_id)
+		# inventory is stored as a reference, not a child node
+		if inventory != null and inventory.has_method("remove_item"):
+			inventory.remove_item(item_id, 1)
+
+func _on_item_result(success: bool, message: String, new_hp: int = -1, new_max_hp: int = -1) -> void:
+	var chat = get_tree().root.get_node_or_null("Main/Chat")
+	if chat and chat.has_method("add_system_message"):
+		chat.add_system_message(message)
+	if success and new_hp >= 0:
+		if new_max_hp >= 0:
+			max_hp = new_max_hp
+		current_hp = min(new_hp, max_hp)
+		_update_hud()
+
+func _on_rank_up(new_rank: String) -> void:
+	rank = new_rank
+	_update_rank_label()
+	if hud and hud.has_method("update_rank"):
+		hud.update_rank(new_rank, RankDB.get_rank_color(level))
+
+func _update_rank_label() -> void:
+	var lbl = get_node_or_null("RankLabel")
+	if lbl == null:
+		return
+	lbl.text = rank
+	var col: Color = RankDB.get_rank_color(level)
+	lbl.add_theme_color_override("font_color", col)
 
 func _on_enemy_killed(_xp: int, gold: int, item_drop: String) -> void:
 	# Gold / item drop feedback — extend when inventory is built
