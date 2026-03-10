@@ -23,6 +23,11 @@ var is_dead:      bool   = false
 var invuln_ticks: float  = 0.0
 var facing_dir:   String = "down"
 
+# ── Cosmetics ─────────────────────────────────────────────────────────────────
+var hair_style: String = "Hair1"             # subfolder under Hairs/
+var hair_color: Color  = Color("e8c49a")     # default blonde-ish
+var _hair_sprite: AnimatedSprite2D = null
+
 var grid_pos:      Vector2
 var target_pos:    Vector2
 var is_stepping:   bool  = false
@@ -106,6 +111,7 @@ func _ready() -> void:
 	$AnimatedSprite2D.animation_finished.connect(_on_animation_finished)
 	# Ensure collision_mask includes layer 1 (remote player bodies) so _try_step blocks on them
 	collision_mask = collision_mask | 1
+	_build_hair_sprite()
 	_build_attack_vis()
 
 func connect_network_signals() -> void:
@@ -236,6 +242,73 @@ func _build_animations() -> void:
 		var tex := load("res://sprites/player/seals_%d.png" % f) as Texture2D
 		if tex: sf.add_frame("seals", tex)
 	$AnimatedSprite2D.sprite_frames = sf
+
+func _build_hair_sprite() -> void:
+	_hair_sprite = AnimatedSprite2D.new()
+	_hair_sprite.name = "HairSprite"
+	_hair_sprite.z_index = 0  # same level as base body — trees handle their own z_index
+	_hair_sprite.modulate = hair_color
+	var sf := SpriteFrames.new()
+	var dirs := ["down", "up", "right", "left"]
+	if sf.has_animation("default"):
+		sf.remove_animation("default")
+	var base = "res://sprites/player/Hairs/%s/" % hair_style
+	for dir in dirs:
+		var anim_name = "walk_" + dir
+		sf.add_animation(anim_name)
+		sf.set_animation_speed(anim_name, 10.0)
+		sf.set_animation_loop(anim_name, true)
+		for fr in range(4):
+			var tex := load(base + "walk_%s_%d.png" % [dir, fr]) as Texture2D
+			if tex: sf.add_frame(anim_name, tex)
+	for dir in dirs:
+		var anim_name = "idle_" + dir
+		sf.add_animation(anim_name)
+		sf.set_animation_speed(anim_name, 1.0)
+		sf.set_animation_loop(anim_name, false)
+		# Hair idle files have no number suffix (idle_down.png not idle_down_0.png)
+		var tex := load(base + "idle_%s.png" % dir) as Texture2D
+		if tex: sf.add_frame(anim_name, tex)
+	for dir in dirs:
+		var anim_name = "attack_" + dir
+		sf.add_animation(anim_name)
+		sf.set_animation_speed(anim_name, 12.0)
+		sf.set_animation_loop(anim_name, false)
+		# Fall back to idle frame if no attack frame exists for hair
+		var tex := load(base + "attack_%s.png" % dir) as Texture2D
+		if not tex: tex = load(base + "idle_%s.png" % dir) as Texture2D
+		if tex: sf.add_frame(anim_name, tex)
+	_hair_sprite.sprite_frames = sf
+	$AnimatedSprite2D.add_child(_hair_sprite)
+	_hair_sprite.stop()  # don't self-animate — we sync manually
+	_hair_sprite.frame = 0
+	# Keep hair in sync whenever base animation changes
+	$AnimatedSprite2D.animation_changed.connect(_sync_hair)
+	$AnimatedSprite2D.frame_changed.connect(_sync_hair)
+
+func _sync_hair() -> void:
+	if _hair_sprite == null:
+		return
+	var anim = $AnimatedSprite2D.animation
+	if not _hair_sprite.sprite_frames.has_animation(anim):
+		return
+	if _hair_sprite.animation != anim:
+		_hair_sprite.animation = anim
+	# Clamp frame to valid range for this animation to avoid out-of-bounds
+	var max_frame = _hair_sprite.sprite_frames.get_frame_count(anim) - 1
+	_hair_sprite.frame = min($AnimatedSprite2D.frame, max_frame)
+
+func set_hair_style(style: String) -> void:
+	hair_style = style
+	if _hair_sprite:
+		_hair_sprite.queue_free()
+		_hair_sprite = null
+	_build_hair_sprite()
+
+func set_hair_color(color: Color) -> void:
+	hair_color = color
+	if _hair_sprite:
+		_hair_sprite.modulate = color
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
