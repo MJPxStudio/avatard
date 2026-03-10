@@ -68,6 +68,10 @@ func _ready() -> void:
 		"icon_path": "res://sprites/player/Shirts/Shirt1/idle_down.png",
 		"equip_slot": "chest", "sprite_folder": "res://sprites/player/Shirts/Shirt1/",
 		"stat_bonuses": {}})
+	add_item({"id": "pants1", "name": "Pants1", "quantity": 1, "stackable": false,
+		"icon_path": "res://sprites/player/Pants/Pants1/idle_down_0.png",
+		"equip_slot": "legs", "sprite_folder": "res://sprites/player/Pants/Pants1/",
+		"stat_bonuses": {}})
 
 
 func _build_ui() -> void:
@@ -217,7 +221,7 @@ func _on_slot_input(index: int, event: InputEvent) -> void:
 		elif slots[index] != null and slots[index].get("equip_slot", "") != "":
 			# Right-click equippable item — send to equip panel
 			if equip_panel_ref:
-				var item = slots[index].duplicate()
+				var item = slots[index]
 				var displaced = equip_panel_ref.equip_item(item)
 				slots[index] = null
 				_refresh_slot(index)

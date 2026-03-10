@@ -163,6 +163,10 @@ func _update_remote_players(states: Dictionary) -> void:
 			if rp.has_method("set_level"):
 				rp.set_level(state.get("level", 1))
 			rp.set_party_member(state.get("username", "") in my_party)
+			if rp.has_method("apply_appearance"):
+				rp.apply_appearance(state.get("appearance", {}))
+			if rp.has_method("apply_equipped"):
+				rp.apply_equipped(state.get("equipped", {}))
 			remote_player_nodes[peer_id] = rp
 		else:
 			var rp_node  = remote_player_nodes[peer_id]
@@ -176,6 +180,10 @@ func _update_remote_players(states: Dictionary) -> void:
 			if rp_node.has_method("set_level"):
 				rp_node.set_level(state.get("level", 1))
 			rp_node.set_party_member(state.get("username", "") in my_party)
+			if rp_node.has_method("apply_appearance"):
+				rp_node.apply_appearance(state.get("appearance", {}))
+			if rp_node.has_method("apply_equipped"):
+				rp_node.apply_equipped(state.get("equipped", {}))
 			# Feed target HUD if this player is locked
 			var lp = get_tree().get_first_node_in_group("local_player")
 			var pid_key = "player_%d" % peer_id

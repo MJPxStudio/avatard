@@ -57,6 +57,18 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	player.visible    = true
 	player.set_physics_process(true)
 	player.connect_network_signals()
+	# Load saved appearance (hair)
+	var saved_appearance = player_data.get("appearance", {})
+	if saved_appearance.has("hair_folder"):
+		var folder: String = saved_appearance["hair_folder"]
+		# Extract style name from folder path e.g. ".../Hairs/Hair1/" → "Hair1"
+		var parts = folder.rstrip("/").split("/")
+		if parts.size() > 0:
+			player.set_hair_style(parts[-1])
+	if saved_appearance.has("hair_color"):
+		player.set_hair_color(saved_appearance["hair_color"])
+	# Send appearance to server so other players see it immediately
+	call_deferred("_send_initial_appearance", player)
 
 	# NOTE: send_position is called inside load_zone after player is positioned.
 	# Do NOT send position here — player.global_position is still (0,0) at this point.
@@ -65,6 +77,7 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	_setup_inventory()
 	_setup_hotbar()
 	_setup_equip_panel()
+	_restore_equipped(player_data.get("equipped", {}))
 	_setup_dungeon_hud()
 	_setup_stat_panel()
 	_setup_target_hud()
@@ -192,6 +205,32 @@ func _do_load_dungeon(scene_path: String, zone_name: String, spawn: Vector2, fad
 			fade.get_parent().queue_free()
 		$Player.set_physics_process(true)
 	)
+
+func _restore_equipped(equipped: Dictionary) -> void:
+	if equipped.is_empty():
+		return
+	var equip = $Player.equip_panel
+	var inv   = $Player.inventory
+	if equip == null:
+		return
+	for slot_key in equipped:
+		var item = equipped[slot_key]
+		if item is Dictionary and item.get("sprite_folder", "") != "":
+			var idx = equip.get_slot_for_item(item)
+			if idx >= 0:
+				equip.equip(idx, item)
+				# Remove the matching item from inventory so it isn't duplicated
+				if inv != null:
+					for i in range(inv.slots.size()):
+						var inv_item = inv.slots[i]
+						if inv_item != null and inv_item.get("id", "") == item.get("id", ""):
+							inv.slots[i] = null
+							inv.refresh_slot(i)
+							break
+
+func _send_initial_appearance(player: Node) -> void:
+	if player.has_method("_send_appearance_to_server"):
+		player._send_appearance_to_server()
 
 func load_zone(scene_path: String, spawn: Vector2 = Vector2.ZERO) -> void:
 	print("[MAIN] load_zone() called with: %s spawn=%s" % [scene_path, str(spawn)])

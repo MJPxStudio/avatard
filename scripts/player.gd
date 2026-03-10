@@ -280,6 +280,8 @@ func _load_layer_textures(base_path: String) -> Dictionary:
 				tex = load(base_path + "walk_%s_%d.png" % [dir, fr]) as Texture2D
 			if tex: textures["walk_%s_%d" % [dir, fr]] = tex
 		var idle_tex := load(base_path + "idle_%s.png" % dir) as Texture2D
+		if not idle_tex:
+			idle_tex = load(base_path + "idle_%s_0.png" % dir) as Texture2D
 		if idle_tex:
 			textures["idle_" + dir]   = idle_tex
 			textures["attack_" + dir] = idle_tex
@@ -331,10 +333,22 @@ func set_hair_style(style: String) -> void:
 	if _hair_sprite: _hair_sprite.queue_free()
 	_hair_sprite = null
 	_build_hair_sprite()
+	_send_appearance_to_server()
 
 func set_hair_color(color: Color) -> void:
 	hair_color = color
 	if _hair_sprite: _hair_sprite.modulate = color
+	_send_appearance_to_server()
+
+func _send_appearance_to_server() -> void:
+	var net = get_tree().root.get_node_or_null("Network")
+	if not net or not net.is_network_connected():
+		return
+	var appearance := {
+		"hair_folder": "res://sprites/player/Hairs/%s/" % hair_style,
+		"hair_color":  hair_color,
+	}
+	net.send_appearance_update.rpc_id(1, appearance)
 
 func _build_shirt_sprite() -> void:
 	pass  # Shirt is now a chest slot equip item — see inventory.gd
@@ -347,43 +361,79 @@ func set_shirt_color(_color: Color) -> void:
 
 # ── Equipment visual layers ────────────────────────────────────────────────────
 
+const _EQUIP_TINT_SHADER := """
+shader_type canvas_item;
+uniform vec4 tint_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float grey_threshold : hint_range(0.0, 0.2) = 0.08;
+
+void fragment() {
+	vec4 col = texture(TEXTURE, UV);
+	float lo = min(col.r, min(col.g, col.b));
+	float hi = max(col.r, max(col.g, col.b));
+	// Pixel is greyscale if the spread between channels is within threshold
+	if ((hi - lo) <= grey_threshold) {
+		// Tint: preserve the grey luminance, apply tint hue
+		float lum = (lo + hi) * 0.5;
+		COLOR = vec4(tint_color.rgb * lum, col.a);
+	} else {
+		COLOR = col;
+	}
+}
+"""
+
 func _build_equip_layers() -> void:
 	# Pre-create a Sprite2D node for every possible equipment slot.
 	# Nodes start with no texture; set_equip_layer() loads textures when gear is equipped.
+	# Each sprite gets the greyscale-selective tint shader so transmog only affects grey pixels.
 	for slot in EQUIP_LAYER_Z.keys():
 		var spr          = Sprite2D.new()
 		spr.name         = "Equip_%s" % slot.capitalize()
 		spr.z_index      = EQUIP_LAYER_Z[slot]
 		spr.position     = $AnimatedSprite2D.position
+		spr.visible      = false
+		spr.material     = null
 		spr.set_meta("textures", {})
 		add_child(spr)
 		_equip_sprites[slot] = spr
 
 func set_equip_layer(slot: String, sprite_folder: String, tint: Color = Color("ffffff")) -> void:
-	# Called by equip_panel when an item with a sprite_folder is equipped.
 	if not _equip_sprites.has(slot):
 		return
 	var spr: Sprite2D = _equip_sprites[slot]
 	var textures := _load_layer_textures(sprite_folder)
 	spr.set_meta("textures", textures)
-	spr.modulate = tint
-	# Set an immediate texture so it shows without waiting for next _process tick
+	# Always create a fresh ShaderMaterial with the correct tint
+	var shader  = Shader.new()
+	shader.code = _EQUIP_TINT_SHADER
+	var mat     = ShaderMaterial.new()
+	mat.shader  = shader
+	mat.set_shader_parameter("tint_color", tint)
+	spr.material = mat
 	var immediate_key := "idle_" + facing_dir
 	if textures.has(immediate_key):
 		spr.texture = textures[immediate_key]
+		spr.visible = true
 
 func set_equip_layer_color(slot: String, color: Color) -> void:
-	# Called by tailor transmog to recolor a live equipment layer.
-	if not _equip_sprites.has(slot):
-		return
-	_equip_sprites[slot].modulate = color
-
-func clear_equip_layer(slot: String) -> void:
-	# Called by equip_panel when an item is unequipped.
 	if not _equip_sprites.has(slot):
 		return
 	var spr: Sprite2D = _equip_sprites[slot]
-	spr.texture = null
+	# Create material if somehow missing, then set color
+	if not spr.material is ShaderMaterial:
+		var shader  = Shader.new()
+		shader.code = _EQUIP_TINT_SHADER
+		var mat     = ShaderMaterial.new()
+		mat.shader  = shader
+		spr.material = mat
+	spr.material.set_shader_parameter("tint_color", color)
+
+func clear_equip_layer(slot: String) -> void:
+	if not _equip_sprites.has(slot):
+		return
+	var spr: Sprite2D = _equip_sprites[slot]
+	spr.texture  = null
+	spr.material = null
+	spr.visible  = false
 	spr.set_meta("textures", {})
 
 func _physics_process(delta: float) -> void:

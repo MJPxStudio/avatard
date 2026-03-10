@@ -62,6 +62,7 @@ func _ready() -> void:
 	Network.facing_received.connect(_on_facing_received)
 	Network.ability_used_received.connect(_on_ability_used)
 	Network.equip_update_received.connect(_on_equip_update)
+	Network.appearance_update_received.connect(_on_appearance_update)
 	Network.dungeon_enter_requested.connect(_on_dungeon_enter_requested)
 	Network.dungeon_exit_requested.connect(_on_dungeon_exit_requested)
 	_dungeon_manager = DungeonMgr.new()
@@ -185,6 +186,12 @@ func _on_equip_update(peer_id: int, equipped: Dictionary) -> void:
 	sp.equipped = clean
 	sp.recalculate_gear_stats()
 	print("[SERVER] %s equip update: %s" % [sp.username, clean.keys()])
+
+func _on_appearance_update(peer_id: int, appearance: Dictionary) -> void:
+	var sp = server_players.get(peer_id, null)
+	if not sp:
+		return
+	sp.appearance = appearance
 
 func _on_ability_used(peer_id: int, ability_name: String, data: Dictionary) -> void:
 	if not server_players.has(peer_id):
@@ -415,6 +422,8 @@ func _broadcast_players() -> void:
 				"level":      sp.level      if sp else 1,
 				"facing_dir": sp.facing_dir if sp else "down",
 				"party_id":   _party_in_party.get(peer_id, -1),
+				"equipped":   sp.equipped   if sp else {},
+				"appearance": sp.appearance if sp else {},
 			}
 	# Send each client only their own state + same-zone players
 	# This keeps packets well under MTU regardless of player count

@@ -16,23 +16,51 @@ var sprite:          AnimatedSprite2D = null
 var _death_timer:    float = 0.0
 var _death_label:    Label = null
 var _name_label:     Label = null
-var _chat_bubble:    Node  = null   # current speech bubble node
+var _chat_bubble:    Node  = null
 var _bubble_tween:   Tween = null
 var _level_label:    Label = null
 var is_dead:         bool  = false
 const RESPAWN_TIME:  float = 5.0
 
+# Cosmetic layers
+var _hair_sprite:   Sprite2D   = null
+var _equip_sprites: Dictionary = {}  # slot → Sprite2D
+var _last_appearance: Dictionary = {}
+var _last_equipped:   Dictionary = {}
+
+const EQUIP_LAYER_Z := {
+	"shoes": 1, "legs": 2, "chest": 3, "head": 6, "weapon": 7, "accessory": 8
+}
+
+const _EQUIP_TINT_SHADER := """
+shader_type canvas_item;
+uniform vec4 tint_color : source_color = vec4(1.0, 1.0, 1.0, 1.0);
+uniform float grey_threshold : hint_range(0.0, 0.2) = 0.08;
+void fragment() {
+	vec4 col = texture(TEXTURE, UV);
+	float lo = min(col.r, min(col.g, col.b));
+	float hi = max(col.r, max(col.g, col.b));
+	if ((hi - lo) <= grey_threshold) {
+		float lum = (lo + hi) * 0.5;
+		COLOR = vec4(tint_color.rgb * lum, col.a);
+	} else {
+		COLOR = col;
+	}
+}
+"""
+
 func _ready() -> void:
 	# Sprite
 	sprite = AnimatedSprite2D.new()
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.offset = Vector2(0, -10)  # match local player sprite anchor
+	sprite.offset = Vector2(0, -10)
 	add_child(sprite)
 	_build_animations()
 	sprite.play("idle_down")
+	_build_hair_layer()
+	_build_equip_layers()
 
-	# Solid collision body so the local player cannot walk through us.
-	# StaticBody2D on layer 1 (local player layer) — no mask needed (it doesn't push anything).
+	# Solid collision body
 	var body           = StaticBody2D.new()
 	body.collision_layer = 1
 	body.collision_mask  = 0
@@ -42,6 +70,129 @@ func _ready() -> void:
 	col_shape.shape    = rect
 	body.add_child(col_shape)
 	add_child(body)
+
+func _build_hair_layer() -> void:
+	_hair_sprite              = Sprite2D.new()
+	_hair_sprite.name         = "HairSprite"
+	_hair_sprite.z_index      = 5
+	_hair_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_hair_sprite.offset         = Vector2(0, -10)
+	_hair_sprite.set_meta("textures", {})
+	add_child(_hair_sprite)
+
+func _build_equip_layers() -> void:
+	for slot in EQUIP_LAYER_Z.keys():
+		var spr              = Sprite2D.new()
+		spr.name             = "Equip_%s" % slot.capitalize()
+		spr.z_index          = EQUIP_LAYER_Z[slot]
+		spr.texture_filter   = CanvasItem.TEXTURE_FILTER_NEAREST
+		spr.offset           = Vector2(0, -10)
+		spr.visible          = false
+		spr.material         = null
+		spr.set_meta("textures", {})
+		add_child(spr)
+		_equip_sprites[slot] = spr
+
+func _load_layer_textures(base_path: String) -> Dictionary:
+	var textures  := {}
+	var dirs      := ["down", "up", "left", "right"]
+	for dir in dirs:
+		# Idle — try both naming conventions
+		var idle_tex := load(base_path + "idle_%s.png" % dir) as Texture2D
+		if not idle_tex:
+			idle_tex = load(base_path + "idle_%s_0.png" % dir) as Texture2D
+		if idle_tex:
+			textures["idle_" + dir]   = idle_tex
+			textures["attack_" + dir] = idle_tex
+		# Walk frames — try both conventions
+		for fr in range(4):
+			var tex := load(base_path + "walk_%s_%d.png" % [dir, fr]) as Texture2D
+			if not tex:
+				tex = load(base_path + "walk_%s%d.png" % [dir, fr]) as Texture2D
+			if tex:
+				textures["walk_%s_%d" % [dir, fr]] = tex
+	return textures
+
+func apply_appearance(appearance: Dictionary) -> void:
+	if appearance == _last_appearance:
+		return
+	_last_appearance = appearance.duplicate()
+	# Hair
+	var hair_folder: String = appearance.get("hair_folder", "")
+	if hair_folder != "" and _hair_sprite != null:
+		var textures := _load_layer_textures(hair_folder)
+		_hair_sprite.set_meta("textures", textures)
+		var idle_key := "idle_" + facing_dir
+		if textures.has(idle_key):
+			_hair_sprite.texture = textures[idle_key]
+	var hair_color = appearance.get("hair_color", null)
+	if hair_color != null and _hair_sprite != null:
+		_hair_sprite.modulate = hair_color
+
+func apply_equipped(equipped: Dictionary) -> void:
+	if equipped == _last_equipped:
+		return
+	_last_equipped = equipped.duplicate()
+	# Clear all layers first
+	for slot in _equip_sprites:
+		_equip_sprites[slot].texture  = null
+		_equip_sprites[slot].material = null
+		_equip_sprites[slot].visible  = false
+		_equip_sprites[slot].set_meta("textures", {})
+	# Apply each equipped item
+	for slot in equipped:
+		if not _equip_sprites.has(slot):
+			continue
+		var item: Dictionary = equipped[slot]
+		var folder: String   = item.get("sprite_folder", "")
+		if folder == "":
+			continue
+		var spr: Sprite2D    = _equip_sprites[slot]
+		var textures         := _load_layer_textures(folder)
+		spr.set_meta("textures", textures)
+		var tint: Color      = item.get("tint", Color("ffffff"))
+		var shader           = Shader.new()
+		shader.code          = _EQUIP_TINT_SHADER
+		var mat              = ShaderMaterial.new()
+		mat.shader           = shader
+		mat.set_shader_parameter("tint_color", tint)
+		spr.material         = mat
+		var idle_key := "idle_" + facing_dir
+		if textures.has(idle_key):
+			spr.texture = textures[idle_key]
+			spr.visible = true
+
+func _sync_all_layers() -> void:
+	# Called each frame to keep all layers in sync with the base sprite animation
+	var anim: String  = sprite.animation if sprite else "idle_down"
+	var frame: int    = sprite.frame     if sprite else 0
+	var parts         = anim.split("_")  # e.g. ["walk","down"] or ["idle","down"]
+	var anim_type     = parts[0]         # "walk" or "idle" or "attack"
+	var dir           = facing_dir
+
+	# Hair
+	if _hair_sprite != null:
+		var textures: Dictionary = _hair_sprite.get_meta("textures", {})
+		if anim_type == "walk":
+			var key := "walk_%s_%d" % [dir, frame]
+			var fallback: String = "idle_" + dir
+			_hair_sprite.texture = textures.get(key, textures.get(fallback))
+		else:
+			_hair_sprite.texture = textures.get("idle_" + dir)
+
+	# Equipment
+	for slot in _equip_sprites:
+		var spr: Sprite2D        = _equip_sprites[slot]
+		var textures: Dictionary = spr.get_meta("textures", {})
+		if textures.is_empty():
+			spr.texture = null
+			continue
+		if anim_type == "walk":
+			var key := "walk_%s_%d" % [dir, frame]
+			var fallback: String = "idle_" + dir
+			spr.texture = textures.get(key, textures.get(fallback))
+		else:
+			spr.texture = textures.get("idle_" + dir)
 
 
 
@@ -235,6 +386,7 @@ func _process(delta: float) -> void:
 		var idle_anim = "idle_" + facing_dir
 		if sprite.animation != idle_anim:
 			sprite.play(idle_anim)
+	_sync_all_layers()
 
 func _bubble_count_lines(text: String, chars_per_line: int) -> int:
 	var words = text.split(" ")

@@ -193,6 +193,9 @@ func _refresh_slot(index: int) -> void:
 		icon_bg.color    = Color(0, 0, 0, 0)
 		if slot.get("icon_path", "") != "":
 			btn.icon = load(slot.icon_path)
+			btn.add_theme_color_override("icon_normal_color", slot.get("tint", Color("ffffff")))
+		else:
+			btn.remove_theme_color_override("icon_normal_color")
 
 func get_selected_item() -> Dictionary:
 	var slot = slots[selected_slot]

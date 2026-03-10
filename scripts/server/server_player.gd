@@ -54,7 +54,8 @@ var stat_strength: int        = 5
 var _loaded_data:  Dictionary = {}
 
 # Equipment
-var equipped: Dictionary = {}   # slot_key -> item dict from client
+var equipped:   Dictionary = {}   # slot_key -> item dict from client
+var appearance: Dictionary = {}   # hair_folder, hair_color
 # Gear bonuses (recalculated on equip change)
 var _gear_str:    int = 0
 var _gear_hp:     int = 0

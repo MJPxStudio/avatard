@@ -11,8 +11,9 @@ var _prompt:   Label = null
 var _ui:       CanvasLayer = null
 
 # Transmog state
-var _transmog_item:       Dictionary = {}
-var _transmog_item_index: int        = -1  # index into player inventory slots
+var _transmog_item:        Dictionary = {}
+var _transmog_item_index:  int        = -1
+var _transmog_item_source: String     = ""  # "inv" or "equip"
 
 func _ready() -> void:
 	add_to_group("npc")
@@ -94,8 +95,10 @@ func _make_ui() -> VBoxContainer:
 	main.add_child(_ui)
 
 	var panel = PanelContainer.new()
-	panel.custom_minimum_size = Vector2(360, 260)
+	panel.custom_minimum_size = Vector2(280, 260)
 	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.set_offsets_preset(Control.PRESET_CENTER, Control.PRESET_MODE_KEEP_SIZE)
+	panel.position.y -= 210
 	_ui.add_child(panel)
 
 	var margin = MarginContainer.new()
@@ -181,25 +184,21 @@ func _open_transmog_picker(player: Node) -> void:
 	_make_title(inner, "Transmog — Choose an Item")
 	_make_separator(inner)
 
-	var inv = player.get("inventory")
-	if inv == null:
-		var lbl = Label.new()
-		lbl.text = "No inventory found."
-		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		inner.add_child(lbl)
-		inner.add_child(_make_button("← Back", 300, _open_main_menu))
-		return
+	var inv          = player.get("inventory")
+	var equip_panel  = player.get("equip_panel")
 
-	# Collect equippable items that have a sprite (can be recolored)
+	# Only show items that are currently equipped — transmog on unequipped items
+	# has no visible effect since the layer isn't rendering.
 	var equippable_slots: Array = []
-	for i in range(inv.slots.size()):
-		var item = inv.slots[i]
-		if item != null and item.get("sprite_folder", "") != "":
-			equippable_slots.append({"index": i, "item": item})
+	if equip_panel != null:
+		for i in range(equip_panel.slots.size()):
+			var item = equip_panel.slots[i]
+			if item != null and item.get("sprite_folder", "") != "":
+				equippable_slots.append({"source": "equip", "index": i, "item": item})
 
 	if equippable_slots.is_empty():
 		var lbl = Label.new()
-		lbl.text = "You have no equippable items to transmog."
+		lbl.text = "You have no equipped items to transmog."
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		inner.add_child(lbl)
@@ -229,10 +228,12 @@ func _open_transmog_picker(player: Node) -> void:
 
 		if item.get("icon_path", "") != "":
 			item_btn.icon = load(item.icon_path)
+			item_btn.add_theme_color_override("icon_normal_color", item.get("tint", Color("ffffff")))
 
 		item_btn.pressed.connect(func():
-			_transmog_item       = item
-			_transmog_item_index = slot_index
+			_transmog_item        = item
+			_transmog_item_index  = entry.index
+			_transmog_item_source = entry.source
 			_open_transmog_color(player)
 		)
 		grid.add_child(item_btn)
@@ -260,30 +261,17 @@ func _open_transmog_color(player: Node) -> void:
 	_make_title(inner, "Transmog — %s" % item.name)
 	_make_separator(inner)
 
-	var picker = ColorPickerButton.new()
-	picker.color = item.get("tint", Color("ffffff"))
-	picker.custom_minimum_size = Vector2(300, 40)
+	var picker = ColorPicker.new()
+	picker.color               = item.get("tint", Color("ffffff"))
+	picker.picker_shape        = 1  # PickerShapeType.SHAPE_HSV_WHEEL
+	picker.edit_alpha          = false
+	picker.sliders_visible     = false
+	picker.hex_visible         = false
+	picker.presets_visible     = false
+	picker.color_modes_visible = false
+	picker.sampler_visible     = false
+	picker.custom_minimum_size = Vector2(240, 140)
 	inner.add_child(picker)
-
-	# Preset swatches
-	var swatches = HBoxContainer.new()
-	swatches.add_theme_constant_override("separation", 6)
-	inner.add_child(swatches)
-
-	var preset_colors = [
-		Color("ffffff"), Color("cc3333"), Color("3355cc"), Color("44aa44"),
-		Color("ccaa33"), Color("aa44aa"), Color("cc7733"), Color("333333"),
-		Color("888888"), Color("aaddff"),
-	]
-	for col in preset_colors:
-		var swatch = ColorRect.new()
-		swatch.color = col
-		swatch.custom_minimum_size = Vector2(22, 22)
-		swatch.gui_input.connect(func(e):
-			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
-				picker.color = col
-		)
-		swatches.add_child(swatch)
 
 	# Apply / Back
 	var btn_row = HBoxContainer.new()
@@ -293,25 +281,28 @@ func _open_transmog_color(player: Node) -> void:
 
 	var apply_btn = _make_button("Apply", 140, func():
 		var chosen_color: Color = picker.color
-		# Store tint on the item dict directly (persists in inventory slot)
-		var inv = player.get("inventory")
-		if inv != null and _transmog_item_index >= 0:
+		var inv         = player.get("inventory")
+		var equip_panel = player.get("equip_panel")
+
+		if _transmog_item_source == "inv" and inv != null and _transmog_item_index >= 0:
+			# Item is in inventory — write tint there and refresh icon
 			var stored = inv.slots[_transmog_item_index]
 			if stored != null:
 				stored["tint"] = chosen_color
 				inv.refresh_slot(_transmog_item_index)
-		# If the item is currently equipped, tint the live sprite layer and refresh the panel icon
-		var slot_key: String = item.get("equip_slot", "")
-		if slot_key != "" and player.has_method("set_equip_layer_color"):
-			var equip_panel = player.get("equip_panel")
-			if equip_panel != null:
-				var equipped = equip_panel.get_all_equipped()
-				if equipped.has(slot_key) and equipped[slot_key].get("id") == item.get("id"):
+		elif _transmog_item_source == "equip" and equip_panel != null and _transmog_item_index >= 0:
+			# Item is equipped — write tint directly to equip panel slot
+			var stored = equip_panel.slots[_transmog_item_index]
+			if stored != null:
+				stored["tint"] = chosen_color
+				equip_panel.refresh_slot(_transmog_item_index)
+				# Apply to live sprite layer immediately
+				var slot_key: String = stored.get("equip_slot", "")
+				if slot_key != "" and player.has_method("set_equip_layer_color"):
 					player.set_equip_layer_color(slot_key, chosen_color)
-					equipped[slot_key]["tint"] = chosen_color
-					var slot_idx: int = equip_panel.get_slot_for_item(equipped[slot_key])
-					if slot_idx >= 0:
-						equip_panel.refresh_slot(slot_idx)
+				# Sync to server so other players see the new tint
+				if equip_panel.has_method("_send_equip_to_server"):
+					equip_panel._send_equip_to_server()
 		_close_ui()
 	)
 	btn_row.add_child(apply_btn)

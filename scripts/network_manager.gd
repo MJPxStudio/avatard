@@ -43,6 +43,7 @@ signal level_up_client(new_level, current_exp, max_exp, stat_points, new_max_hp,
 signal hit_confirmed(position, amount)
 signal ability_hit_confirmed(position, amount)
 signal equip_update_received(peer_id, equipped)
+signal appearance_update_received(peer_id, appearance)
 signal dungeon_enter_requested(peer_id, dungeon_id)
 signal dungeon_exit_requested(peer_id)
 signal wave_start_received(wave, total, objective)
@@ -306,6 +307,10 @@ func confirm_ability_hit(hit_position: Vector2, amount: int) -> void:
 @rpc("any_peer", "reliable")
 func send_equip_update(equipped: Dictionary) -> void:
 	equip_update_received.emit(multiplayer.get_remote_sender_id(), equipped)
+
+@rpc("any_peer", "reliable")
+func send_appearance_update(appearance: Dictionary) -> void:
+	appearance_update_received.emit(multiplayer.get_remote_sender_id(), appearance)
 
 # ── Dungeon RPCs ───────────────────────────────────────────────────────────
 @rpc("any_peer", "reliable")

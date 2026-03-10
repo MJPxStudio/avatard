@@ -27,6 +27,13 @@ func load_player(username: String) -> Dictionary:
 				if parsed.has("position") and parsed["position"] is Array:
 					var p = parsed["position"]
 					parsed["position"] = Vector2(p[0], p[1])
+				# Deserialize Color tint values in equipped items
+				if parsed.has("equipped") and parsed["equipped"] is Dictionary:
+					for slot in parsed["equipped"]:
+						var item = parsed["equipped"][slot]
+						if item is Dictionary and item.has("tint") and item["tint"] is Array:
+							var c = item["tint"]
+							item["tint"] = Color(c[0], c[1], c[2], c[3])
 				print("[DB] Loaded player: %s" % username)
 				return parsed
 	# New player defaults
@@ -49,11 +56,18 @@ func load_player(username: String) -> Dictionary:
 
 func save_player(username: String, data: Dictionary) -> void:
 	var path  = _path(username)
-	var saved = data.duplicate()
+	var saved = data.duplicate(true)
 	# Serialize Vector2 to array for JSON
 	if saved.has("position") and saved["position"] is Vector2:
 		var p = saved["position"]
 		saved["position"] = [p.x, p.y]
+	# Serialize Color tint values in equipped items
+	if saved.has("equipped") and saved["equipped"] is Dictionary:
+		for slot in saved["equipped"]:
+			var item = saved["equipped"][slot]
+			if item is Dictionary and item.has("tint") and item["tint"] is Color:
+				var c: Color = item["tint"]
+				item["tint"] = [c.r, c.g, c.b, c.a]
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(saved, "\t"))
