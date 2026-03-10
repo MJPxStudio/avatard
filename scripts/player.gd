@@ -26,7 +26,27 @@ var facing_dir:   String = "down"
 # ── Cosmetics ─────────────────────────────────────────────────────────────────
 var hair_style: String = "Hair1"             # subfolder under Hairs/
 var hair_color: Color  = Color("e8c49a")     # default blonde-ish
-var _hair_sprite: AnimatedSprite2D = null
+var _hair_sprite: Sprite2D = null
+
+# Equipment visual layers — keyed by equip slot name (weapon/head/chest/legs/shoes/accessory)
+# Each value is a Sprite2D node; absent key or null = slot empty / no sprite sheet loaded
+var _equip_sprites: Dictionary = {}
+
+# Z-index stacking order (bottom → top):
+#   base player (AnimatedSprite2D) = 0
+#   shoes = 1, legs = 2, shirt = 3, chest = 4, hair = 5, head = 6, weapon = 7, accessory = 8
+const EQUIP_LAYER_Z := {
+	"weapon":    7,
+	"head":      6,
+	"chest":     4,
+	"legs":      2,
+	"shoes":     1,
+	"accessory": 8,
+}
+
+# Cosmetic layer animation tracking — updated whenever .play() is called
+var _cosm_anim:  String = "idle_down"
+var _cosm_frame: int    = 0
 
 var grid_pos:      Vector2
 var target_pos:    Vector2
@@ -107,11 +127,13 @@ func _ready() -> void:
 	last_safe_pos   = grid_pos
 	_build_animations()
 	$AnimatedSprite2D.play("idle_down")
+	_cosm_anim = "idle_down"
 	_update_hud()
 	$AnimatedSprite2D.animation_finished.connect(_on_animation_finished)
 	# Ensure collision_mask includes layer 1 (remote player bodies) so _try_step blocks on them
 	collision_mask = collision_mask | 1
 	_build_hair_sprite()
+	_build_equip_layers()
 	_build_attack_vis()
 
 func connect_network_signals() -> void:
@@ -243,72 +265,126 @@ func _build_animations() -> void:
 		if tex: sf.add_frame("seals", tex)
 	$AnimatedSprite2D.sprite_frames = sf
 
-func _build_hair_sprite() -> void:
-	_hair_sprite = AnimatedSprite2D.new()
-	_hair_sprite.name = "HairSprite"
-	_hair_sprite.z_index = 0  # same level as base body — trees handle their own z_index
-	_hair_sprite.modulate = hair_color
-	var sf := SpriteFrames.new()
-	var dirs := ["down", "up", "right", "left"]
-	if sf.has_animation("default"):
-		sf.remove_animation("default")
-	var base = "res://sprites/player/Hairs/%s/" % hair_style
-	for dir in dirs:
-		var anim_name = "walk_" + dir
-		sf.add_animation(anim_name)
-		sf.set_animation_speed(anim_name, 10.0)
-		sf.set_animation_loop(anim_name, true)
-		for fr in range(4):
-			var tex := load(base + "walk_%s_%d.png" % [dir, fr]) as Texture2D
-			if tex: sf.add_frame(anim_name, tex)
-	for dir in dirs:
-		var anim_name = "idle_" + dir
-		sf.add_animation(anim_name)
-		sf.set_animation_speed(anim_name, 1.0)
-		sf.set_animation_loop(anim_name, false)
-		# Hair idle files have no number suffix (idle_down.png not idle_down_0.png)
-		var tex := load(base + "idle_%s.png" % dir) as Texture2D
-		if tex: sf.add_frame(anim_name, tex)
-	for dir in dirs:
-		var anim_name = "attack_" + dir
-		sf.add_animation(anim_name)
-		sf.set_animation_speed(anim_name, 12.0)
-		sf.set_animation_loop(anim_name, false)
-		# Fall back to idle frame if no attack frame exists for hair
-		var tex := load(base + "attack_%s.png" % dir) as Texture2D
-		if not tex: tex = load(base + "idle_%s.png" % dir) as Texture2D
-		if tex: sf.add_frame(anim_name, tex)
-	_hair_sprite.sprite_frames = sf
-	$AnimatedSprite2D.add_child(_hair_sprite)
-	_hair_sprite.stop()  # don't self-animate — we sync manually
-	_hair_sprite.frame = 0
-	# Keep hair in sync whenever base animation changes
-	$AnimatedSprite2D.animation_changed.connect(_sync_hair)
-	$AnimatedSprite2D.frame_changed.connect(_sync_hair)
+# ── Cosmetic layer helpers ────────────────────────────────────────────────────
+# Sprite2D siblings of AnimatedSprite2D (NOT children of it).
+# _process reads AnimatedSprite2D.animation + .frame every frame directly.
+# No signals. No tracking variables. Dead simple.
 
-func _sync_hair() -> void:
-	if _hair_sprite == null:
+func _load_layer_textures(base_path: String) -> Dictionary:
+	var textures := {}
+	var dirs := ["down", "up", "right", "left"]
+	for dir in dirs:
+		for fr in range(4):
+			var tex := load(base_path + "walk_%s%d.png" % [dir, fr]) as Texture2D
+			if not tex:
+				tex = load(base_path + "walk_%s_%d.png" % [dir, fr]) as Texture2D
+			if tex: textures["walk_%s_%d" % [dir, fr]] = tex
+		var idle_tex := load(base_path + "idle_%s.png" % dir) as Texture2D
+		if idle_tex:
+			textures["idle_" + dir]   = idle_tex
+			textures["attack_" + dir] = idle_tex
+		var atk_tex := load(base_path + "attack_%s.png" % dir) as Texture2D
+		if atk_tex: textures["attack_" + dir] = atk_tex
+	return textures
+
+func _process(_delta: float) -> void:
+	# Read AnimatedSprite2D state directly every render frame
+	var anim: String = $AnimatedSprite2D.animation
+	var fr:   int    = $AnimatedSprite2D.frame
+	var key:  String
+	if anim.begins_with("walk_"):
+		key = "%s_%d" % [anim, fr]
+	elif anim.begins_with("idle_"):
+		key = anim
+	elif anim.begins_with("attack_"):
+		key = "attack_" + anim.substr(7)
+	else:
+		key = "idle_down"
+	# Fall back to idle facing direction if a walk/attack frame is missing.
+	var fallback_key: String = "idle_" + facing_dir
+	_sync_layer(_hair_sprite, key, fallback_key)
+	for spr in _equip_sprites.values():
+		_sync_layer(spr, key, fallback_key)
+
+func _sync_layer(spr: Sprite2D, key: String, fallback_key: String) -> void:
+	if spr == null or not is_instance_valid(spr):
 		return
-	var anim = $AnimatedSprite2D.animation
-	if not _hair_sprite.sprite_frames.has_animation(anim):
-		return
-	if _hair_sprite.animation != anim:
-		_hair_sprite.animation = anim
-	# Clamp frame to valid range for this animation to avoid out-of-bounds
-	var max_frame = _hair_sprite.sprite_frames.get_frame_count(anim) - 1
-	_hair_sprite.frame = min($AnimatedSprite2D.frame, max_frame)
+	var t: Dictionary = spr.get_meta("textures", {})
+	var lookup: String = key if t.has(key) else fallback_key
+	if t.has(lookup):
+		spr.texture = t[lookup]
+
+func _cosm_play(_anim: String) -> void:
+	pass  # unused — _process handles sync
+
+func _build_hair_sprite() -> void:
+	_hair_sprite          = Sprite2D.new()
+	_hair_sprite.name     = "HairSprite"
+	_hair_sprite.z_index  = 5   # above chest/shirt layers
+	_hair_sprite.modulate = hair_color
+	add_child(_hair_sprite)
+	_hair_sprite.position = $AnimatedSprite2D.position
+	_hair_sprite.set_meta("textures", _load_layer_textures("res://sprites/player/Hairs/%s/" % hair_style))
 
 func set_hair_style(style: String) -> void:
 	hair_style = style
-	if _hair_sprite:
-		_hair_sprite.queue_free()
-		_hair_sprite = null
+	if _hair_sprite: _hair_sprite.queue_free()
+	_hair_sprite = null
 	_build_hair_sprite()
 
 func set_hair_color(color: Color) -> void:
 	hair_color = color
-	if _hair_sprite:
-		_hair_sprite.modulate = color
+	if _hair_sprite: _hair_sprite.modulate = color
+
+func _build_shirt_sprite() -> void:
+	pass  # Shirt is now a chest slot equip item — see inventory.gd
+
+func set_shirt_style(_style: String) -> void:
+	pass  # Deprecated — shirt is now driven by equip_panel chest slot
+
+func set_shirt_color(_color: Color) -> void:
+	pass  # Deprecated — tint equip items via set_equip_layer tint if needed
+
+# ── Equipment visual layers ────────────────────────────────────────────────────
+
+func _build_equip_layers() -> void:
+	# Pre-create a Sprite2D node for every possible equipment slot.
+	# Nodes start with no texture; set_equip_layer() loads textures when gear is equipped.
+	for slot in EQUIP_LAYER_Z.keys():
+		var spr          = Sprite2D.new()
+		spr.name         = "Equip_%s" % slot.capitalize()
+		spr.z_index      = EQUIP_LAYER_Z[slot]
+		spr.position     = $AnimatedSprite2D.position
+		spr.set_meta("textures", {})
+		add_child(spr)
+		_equip_sprites[slot] = spr
+
+func set_equip_layer(slot: String, sprite_folder: String, tint: Color = Color("ffffff")) -> void:
+	# Called by equip_panel when an item with a sprite_folder is equipped.
+	if not _equip_sprites.has(slot):
+		return
+	var spr: Sprite2D = _equip_sprites[slot]
+	var textures := _load_layer_textures(sprite_folder)
+	spr.set_meta("textures", textures)
+	spr.modulate = tint
+	# Set an immediate texture so it shows without waiting for next _process tick
+	var immediate_key := "idle_" + facing_dir
+	if textures.has(immediate_key):
+		spr.texture = textures[immediate_key]
+
+func set_equip_layer_color(slot: String, color: Color) -> void:
+	# Called by tailor transmog to recolor a live equipment layer.
+	if not _equip_sprites.has(slot):
+		return
+	_equip_sprites[slot].modulate = color
+
+func clear_equip_layer(slot: String) -> void:
+	# Called by equip_panel when an item is unequipped.
+	if not _equip_sprites.has(slot):
+		return
+	var spr: Sprite2D = _equip_sprites[slot]
+	spr.texture = null
+	spr.set_meta("textures", {})
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
@@ -524,11 +600,13 @@ func _try_step(input: Vector2, step_rate: float) -> void:
 		var walk_anim = "walk_" + facing_dir
 		if $AnimatedSprite2D.animation != walk_anim:
 			$AnimatedSprite2D.play(walk_anim)
+			_cosm_play(walk_anim)
 
 func _play_idle() -> void:
 	var idle_anim = "idle_" + facing_dir
 	if $AnimatedSprite2D.animation != idle_anim:
 		$AnimatedSprite2D.play(idle_anim)
+		_cosm_play(idle_anim)
 
 # ------ DEBUG -------------------------------------------------------------------
 
@@ -580,6 +658,7 @@ func _do_attack() -> void:
 	var dir_vec = get_attack_direction()
 	_update_facing(dir_vec)
 	$AnimatedSprite2D.play("attack_" + facing_dir)
+	_cosm_play("attack_" + facing_dir)
 	# Lunge — slide forward, stop just short of any enemy in the way
 	var lunge_dest = global_position + dir_vec * 50.0
 	var space      = get_world_2d().direct_space_state

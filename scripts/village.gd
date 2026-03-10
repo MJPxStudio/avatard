@@ -40,6 +40,9 @@ func _build_village() -> void:
 	# --- BARBER NPC ---
 	_make_barber(Vector2(200, 530))
 
+	# --- TAILOR NPC ---
+	_make_tailor(Vector2(350, 530))
+
 	# --- DUNGEON PORTAL ---
 	var portal = load("res://scripts/dungeon_portal.gd").new()
 	portal.position = Vector2(800, 0)
@@ -88,6 +91,15 @@ func _make_zone_door(pos: Vector2, target_scene: String, label: String, spawn: V
 	shape.shape = rect
 	d.add_child(shape)
 	add_child(d)
+
+func _make_tailor(pos: Vector2) -> void:
+	var script = load("res://scripts/tailor_npc.gd")
+	if script == null:
+		return
+	var tailor = Node2D.new()
+	tailor.set_script(script)
+	tailor.position = pos
+	add_child(tailor)
 
 func _make_barber(pos: Vector2) -> void:
 	var barber_script = load("res://scripts/barber_npc.gd")

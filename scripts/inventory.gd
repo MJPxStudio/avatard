@@ -64,13 +64,11 @@ func _ready() -> void:
 	_build_ui()
 	visible = false
 
-	# Test items
-	add_item({"id": "potion",     "name": "Potion",     "quantity": 5,  "stackable": true,  "icon_path": ""})
-	add_item({"id": "kunai",      "name": "Kunai",      "quantity": 10, "stackable": true,  "icon_path": ""})
-	add_item({"id": "iron_sword", "name": "Iron Sword", "quantity": 1,  "stackable": false, "icon_path": "",
-		"equip_slot": "weapon", "stat_bonuses": {"strength": 5, "dex": 2}})
-	add_item({"id": "leather_helm", "name": "Leather Helm", "quantity": 1, "stackable": false, "icon_path": "",
-		"equip_slot": "head", "stat_bonuses": {"hp": 3}})
+	add_item({"id": "shirt1", "name": "Shirt1", "quantity": 1, "stackable": false,
+		"icon_path": "res://sprites/player/Shirts/Shirt1/idle_down.png",
+		"equip_slot": "chest", "sprite_folder": "res://sprites/player/Shirts/Shirt1/",
+		"stat_bonuses": {}})
+
 
 func _build_ui() -> void:
 	# Root control — draggable window
@@ -129,6 +127,18 @@ func _build_ui() -> void:
 		lbl.size = Vector2(btn.size.x - 2, 12)
 		lbl.text = ""
 		btn.add_child(lbl)
+
+		# Icon TextureRect — 150% of slot size, centered, renders above button but below label
+		var icon_size := SLOT_SIZE * SCALE * 1.5
+		var icon_rect := TextureRect.new()
+		icon_rect.name             = "IconRect"
+		icon_rect.size             = icon_size
+		icon_rect.position         = (SLOT_SIZE * SCALE - icon_size) * 0.5
+		icon_rect.expand_mode      = TextureRect.EXPAND_IGNORE_SIZE
+		icon_rect.stretch_mode     = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon_rect.texture_filter   = CanvasItem.TEXTURE_FILTER_NEAREST
+		icon_rect.mouse_filter     = Control.MOUSE_FILTER_IGNORE
+		btn.add_child(icon_rect)
 
 		var slot_index = i
 		btn.pressed.connect(func(): _on_slot_clicked(slot_index))
@@ -221,12 +231,13 @@ func _process(_delta: float) -> void:
 		held_label.global_position = get_viewport().get_mouse_position() + Vector2(8, 8)
 
 func _refresh_slot(index: int) -> void:
-	var btn = slot_buttons[index]
-	var lbl = btn.get_child(0) as Label
+	var btn  = slot_buttons[index]
+	var lbl  = btn.get_child(0) as Label
+	var icon = btn.get_node("IconRect") as TextureRect
 	var item = slots[index]
 	if item == null:
-		lbl.text = ""
-		btn.icon = null
+		lbl.text      = ""
+		icon.texture  = null
 		btn.tooltip_text = ""
 	else:
 		lbl.text = str(item.quantity) if item.get("stackable", true) and item.quantity > 1 else ""
@@ -239,7 +250,11 @@ func _refresh_slot(index: int) -> void:
 			tip += "\n[Right-click to equip]"
 		btn.tooltip_text = tip
 		if item.get("icon_path", "") != "":
-			btn.icon = load(item.icon_path)
+			icon.texture  = load(item.icon_path)
+			icon.modulate = item.get("tint", Color("ffffff"))
+
+func refresh_slot(index: int) -> void:
+	_refresh_slot(index)
 
 func refresh_all() -> void:
 	for i in range(42):

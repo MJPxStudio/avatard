@@ -108,13 +108,15 @@ func _on_slot_clicked(index: int) -> void:
 	if inv and inv.add_item(item):
 		slots[index] = null
 		_refresh_slot(index)
+		_clear_equip_visuals(SLOT_KEYS[index])
 		_send_equip_to_server()
 
 func _refresh_slot(index: int) -> void:
-	var btn = slot_buttons[index]
+	var btn  = slot_buttons[index]
 	var item = slots[index]
 	if item == null:
 		btn.icon = null
+		btn.remove_theme_color_override("icon_normal_color")
 		btn.tooltip_text = SLOT_NAMES[index] + " (empty)"
 	else:
 		var bonuses = item.get("stat_bonuses", {})
@@ -126,6 +128,10 @@ func _refresh_slot(index: int) -> void:
 		btn.tooltip_text = tip
 		if item.get("icon_path", "") != "":
 			btn.icon = load(item.icon_path)
+			btn.add_theme_color_override("icon_normal_color", item.get("tint", Color("ffffff")))
+
+func refresh_slot(index: int) -> void:
+	_refresh_slot(index)
 
 func _send_equip_to_server() -> void:
 	var net = get_tree().root.get_node_or_null("Network")
@@ -152,20 +158,39 @@ func equip_item(item: Dictionary) -> Dictionary:
 	var displaced = slots[idx]
 	slots[idx] = item
 	_refresh_slot(idx)
+	_apply_equip_visuals(SLOT_KEYS[idx], item)
 	_send_equip_to_server()
 	return displaced if displaced != null else {}
 
 func equip(index: int, item_data: Dictionary) -> void:
 	slots[index] = item_data
 	_refresh_slot(index)
+	_apply_equip_visuals(SLOT_KEYS[index], item_data)
 	_send_equip_to_server()
 
 func unequip(index: int) -> Dictionary:
 	var item = slots[index]
 	slots[index] = null
 	_refresh_slot(index)
+	_clear_equip_visuals(SLOT_KEYS[index])
 	_send_equip_to_server()
 	return item if item != null else {}
+
+func _apply_equip_visuals(slot_key: String, item: Dictionary) -> void:
+	if player_ref == null or not is_instance_valid(player_ref):
+		return
+	var folder: String = item.get("sprite_folder", "")
+	if folder == "":
+		return
+	var tint: Color = item.get("tint", Color("ffffff"))
+	if player_ref.has_method("set_equip_layer"):
+		player_ref.set_equip_layer(slot_key, folder, tint)
+
+func _clear_equip_visuals(slot_key: String) -> void:
+	if player_ref == null or not is_instance_valid(player_ref):
+		return
+	if player_ref.has_method("clear_equip_layer"):
+		player_ref.clear_equip_layer(slot_key)
 
 func get_all_equipped() -> Dictionary:
 	var out: Dictionary = {}
