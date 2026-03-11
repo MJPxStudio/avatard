@@ -89,6 +89,13 @@ func save_player(username: String, data: Dictionary) -> void:
 					entry["tint"] = t  # already serialized
 			slim[slot] = entry
 		saved["equipped"] = slim
+	# Serialize appearance.hair_color Color → array for JSON
+	if saved.has("appearance") and saved["appearance"] is Dictionary:
+		var app = saved["appearance"].duplicate()
+		if app.has("hair_color") and app["hair_color"] is Color:
+			var c = app["hair_color"]
+			app["hair_color"] = [c.r, c.g, c.b, c.a]
+		saved["appearance"] = app
 	var file = FileAccess.open(path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(saved, "\t"))

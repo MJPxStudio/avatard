@@ -16,6 +16,7 @@ const SLOT_POSITIONS = [
 ]
 
 var slots:        Array = []
+signal loadout_changed
 var slot_buttons: Array = []
 var cooldown_overlays: Array = []
 var selected_slot: int = 0
@@ -238,3 +239,4 @@ func set_slot(index: int, item_data) -> void:
 func set_ability(index: int, ability: AbilityBase) -> void:
 	slots[index] = ability
 	_refresh_slot(index)
+	loadout_changed.emit()

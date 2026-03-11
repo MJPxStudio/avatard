@@ -305,6 +305,48 @@ func confirm_hit(hit_position: Vector2, amount: int) -> void:
 func confirm_ability_hit(hit_position: Vector2, amount: int) -> void:
 	ability_hit_confirmed.emit(hit_position, amount)
 
+# Status effect notifications (server → target client)
+# Must use target_peer_id so host-player receives their own status
+@rpc("authority", "reliable")
+func notify_status(target_peer_id: int, status_id: String, duration: float) -> void:
+	if target_peer_id == multiplayer.get_unique_id():
+		status_applied.emit(status_id, duration)
+
+@rpc("authority", "reliable")
+func notify_status_end(target_peer_id: int, status_id: String) -> void:
+	if target_peer_id == multiplayer.get_unique_id():
+		status_ended.emit(status_id)
+
+@rpc("authority", "reliable")
+func notify_pull(new_pos: Vector2) -> void:
+	pull_received.emit(new_pos)
+
+signal status_applied(status_id: String, duration: float)
+signal status_ended(status_id: String)
+signal pull_received(new_pos: Vector2)
+
+# Shadow Possession projectile RPCs
+@rpc("authority", "reliable")
+func shadow_spawn(shadow_id: String, caster_peer_id: int, start_pos: Vector2, target_id_str: String) -> void:
+	shadow_spawned.emit(shadow_id, caster_peer_id, start_pos, target_id_str)
+
+@rpc("authority", "unreliable_ordered")
+func shadow_move(shadow_id: String, pos: Vector2) -> void:
+	shadow_moved.emit(shadow_id, pos)
+
+@rpc("authority", "reliable")
+func shadow_despawn(shadow_id: String, hit: bool) -> void:
+	shadow_despawned.emit(shadow_id, hit)
+
+@rpc("authority", "reliable")
+func ability_visual(target_id_str: String, visual_id: String) -> void:
+	ability_visual_received.emit(target_id_str, visual_id)
+
+signal shadow_spawned(shadow_id: String, caster_peer_id: int, start_pos: Vector2, target_id_str: String)
+signal ability_visual_received(target_id_str: String, visual_id: String)
+signal shadow_moved(shadow_id: String, pos: Vector2)
+signal shadow_despawned(shadow_id: String, hit: bool)
+
 @rpc("any_peer", "reliable")
 func send_equip_update(equipped: Dictionary) -> void:
 	equip_update_received.emit(multiplayer.get_remote_sender_id(), equipped)
@@ -314,6 +356,26 @@ func send_appearance_update(appearance: Dictionary) -> void:
 	appearance_update_received.emit(multiplayer.get_remote_sender_id(), appearance)
 
 @rpc("any_peer", "reliable")
+func send_hotbar_loadout(loadout: Array) -> void:
+	if multiplayer.get_unique_id() == 1:
+		# Already on server — emit directly, no RPC needed
+		hotbar_loadout_received.emit(1, loadout)
+	else:
+		_receive_hotbar_loadout.rpc_id(1, loadout)
+
+@rpc("any_peer", "reliable")
+func _receive_hotbar_loadout(loadout: Array) -> void:
+	hotbar_loadout_received.emit(multiplayer.get_remote_sender_id(), loadout)
+
+signal hotbar_loadout_received(peer_id: int, loadout: Array)
+
+func send_character_creation(clan_id: String, element_id: String) -> void:
+	receive_character_creation.rpc_id(1, clan_id, element_id)
+
+@rpc("any_peer", "reliable")
+func receive_character_creation(clan_id: String, element_id: String) -> void:
+	character_creation_received.emit(multiplayer.get_remote_sender_id(), clan_id, element_id)
+
 func send_use_item(item_id: String) -> void:
 	item_used_received.emit(multiplayer.get_remote_sender_id(), item_id)
 
@@ -407,6 +469,7 @@ func send_spend_stats(hp: int, chakra: int, strength: int, dex: int, int_: int) 
 
 signal spend_stats_server(peer_id, hp, chakra, strength, dex, int_)
 signal item_used_received(peer_id: int, item_id: String)
+signal character_creation_received(peer_id: int, clan_id: String, element_id: String)
 signal item_result_client(success: bool, message: String, new_hp: int, new_max_hp: int)
 
 @rpc("authority", "reliable")

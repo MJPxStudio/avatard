@@ -14,7 +14,7 @@ const DOT_SELF:    float = 3.0    # radius of local player dot
 const DOT_OTHER:   float = 2.0    # radius of remote dots
 
 const COL_BG:      Color = Color(0.04, 0.04, 0.06, 0.82)
-const COL_BORDER:  Color = Color(0.5,  0.5,  0.4,  0.9)
+const COL_BORDER:  Color = Color(1.0,  0.84, 0.0,  1.0)   # gold
 const COL_SELF:    Color = Color(1.0,  1.0,  1.0,  1.0)
 const COL_PLAYER:  Color = Color(0.3,  0.6,  1.0,  1.0)
 const COL_PARTY:   Color = Color(0.2,  0.95, 0.35, 1.0)
@@ -99,7 +99,7 @@ func _on_draw() -> void:
 		_draw_node.draw_line(
 			Vector2(cos(a0), sin(a0)) * radius,
 			Vector2(cos(a1), sin(a1)) * radius,
-			COL_BORDER, 1.5)
+			COL_BORDER, 2.5)
 
 	# Remote enemies
 	for enemy in gs.remote_enemy_nodes.values():

@@ -9,6 +9,11 @@ func _ready() -> void:
 	var net = get_tree().root.get_node_or_null("Network")
 	if net:
 		net.hit_confirmed.connect(_on_hit_confirmed)
+		net.ability_hit_confirmed.connect(_on_ability_hit_confirmed)
+
+func _on_ability_hit_confirmed(hit_pos: Vector2, amount: int) -> void:
+	if amount > 0:
+		spawn(hit_pos, amount, false)
 	var local_player = get_tree().get_first_node_in_group("local_player")
 	if local_player:
 		local_player.connect("tree_exiting", func(): pass)

@@ -91,7 +91,26 @@ func _on_submit(username: String) -> void:
 
 func _on_login_accepted(player_data: Dictionary) -> void:
 	visible = false
-	get_tree().current_scene.on_player_logged_in(player_data)
+	# New player — show character creation before entering world
+	if player_data.get("clan", "") == "":
+		_show_character_creation(player_data)
+	else:
+		get_tree().current_scene.on_player_logged_in(player_data)
+
+func _show_character_creation(player_data: Dictionary) -> void:
+	var creation = CanvasLayer.new()
+	creation.set_script(load("res://scripts/character_creation.gd"))
+	get_tree().current_scene.add_child(creation)
+	creation.creation_complete.connect(func(clan_id, element_id):
+		player_data["clan"]    = clan_id
+		player_data["element"] = element_id
+		# Persist choice on server immediately
+		var net = get_tree().root.get_node_or_null("Network")
+		if net and net.is_network_connected():
+			net.send_character_creation(clan_id, element_id)
+		get_tree().current_scene.on_player_logged_in(player_data)
+	, CONNECT_ONE_SHOT)
+	creation.start(player_data)
 
 func _on_login_denied(reason: String) -> void:
 	status_label.text    = reason

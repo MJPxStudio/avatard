@@ -280,7 +280,7 @@ func apply_pull(caster_pos: Vector2, pull_dist: float, tile_size: float = 16.0) 
 	var dir      = (caster_pos - world_pos).normalized()
 	var new_pos  = caster_pos - dir * pull_dist
 	new_pos      = Vector2(round(new_pos.x / tile_size) * tile_size,
-						   round(new_pos.y / tile_size) * tile_size)
+	                       round(new_pos.y / tile_size) * tile_size)
 	world_pos        = new_pos
 	global_position  = new_pos
 	var net = get_tree().root.get_node_or_null("Network")

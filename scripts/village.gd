@@ -43,6 +43,9 @@ func _build_village() -> void:
 	# --- TAILOR NPC ---
 	_make_tailor(Vector2(350, 530))
 
+	# --- SCROLL VENDOR (debug) ---
+	_make_scroll_vendor(Vector2(500, 530))
+
 	# --- DUNGEON PORTAL ---
 	var portal = load("res://scripts/dungeon_portal.gd").new()
 	portal.position = Vector2(800, 0)
@@ -91,6 +94,15 @@ func _make_zone_door(pos: Vector2, target_scene: String, label: String, spawn: V
 	shape.shape = rect
 	d.add_child(shape)
 	add_child(d)
+
+func _make_scroll_vendor(pos: Vector2) -> void:
+	var script = load("res://scripts/scroll_vendor_npc.gd")
+	if script == null:
+		return
+	var npc = Node2D.new()
+	npc.set_script(script)
+	npc.position = pos
+	add_child(npc)
 
 func _make_tailor(pos: Vector2) -> void:
 	var script = load("res://scripts/tailor_npc.gd")

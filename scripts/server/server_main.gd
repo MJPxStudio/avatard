@@ -24,6 +24,7 @@ var _party_in_party: Dictionary = {}   # peer_id  -> party_id
 var _party_next_id:  int        = 1
 var _dungeon_manager: Node       = null
 var _enemy_nodes:     Dictionary = {}   # "wolf_0" -> Node
+var _shadow_nodes:    Dictionary = {}   # shadow_id -> ServerShadow
 var _respawn_queue:   Array      = []   # [{id, script, pos, zone, timer}]
 var sync_timer:       float      = 0.0
 var enemy_sync_timer: float      = 0.0
@@ -62,7 +63,9 @@ func _ready() -> void:
 	Network.facing_received.connect(_on_facing_received)
 	Network.ability_used_received.connect(_on_ability_used)
 	Network.equip_update_received.connect(_on_equip_update)
+	Network.character_creation_received.connect(_on_character_creation)
 	Network.item_used_received.connect(_on_item_used)
+	Network.hotbar_loadout_received.connect(_on_hotbar_loadout)
 	Network.appearance_update_received.connect(_on_appearance_update)
 	Network.dungeon_enter_requested.connect(_on_dungeon_enter_requested)
 	Network.dungeon_exit_requested.connect(_on_dungeon_exit_requested)
@@ -175,6 +178,28 @@ func _on_dungeon_exit_requested(peer_id: int) -> void:
 	net.dungeon_exit_accepted.rpc_id(peer_id, exit_scene, exit_pos)
 	print("[SERVER] %s exited dungeon back to %s" % [sp.username, exit_zone])
 
+func _on_shadow_freed(shadow_id: String) -> void:
+	_shadow_nodes.erase(shadow_id)
+
+func _on_hotbar_loadout(peer_id: int, loadout: Array) -> void:
+	var sp = server_players.get(peer_id, null)
+	if sp == null:
+		return
+	sp.hotbar_loadout = loadout
+	Database.save_player(sp.username, sp.get_save_data())
+
+func _on_character_creation(peer_id: int, clan_id: String, element_id: String) -> void:
+	var sp = server_players.get(peer_id, null)
+	if sp == null or sp.clan != "":
+		return
+	if not ClanDB.clan_exists(clan_id) or not ClanDB.element_exists(element_id):
+		return
+	sp.clan    = clan_id
+	sp.element = element_id
+	var save_data = sp.get_save_data()
+	Database.save_player(sp.username, save_data)
+	print("[SERVER] Character creation: %s chose clan=%s element=%s" % [sp.username, clan_id, element_id])
+
 func _on_equip_update(peer_id: int, equipped: Dictionary) -> void:
 	var sp = server_players.get(peer_id, null)
 	if not sp:
@@ -193,6 +218,7 @@ func _on_appearance_update(peer_id: int, appearance: Dictionary) -> void:
 	if not sp:
 		return
 	sp.appearance = appearance
+	Database.save_player(sp.username, sp.get_save_data())
 
 func _on_item_used(peer_id: int, item_id: String) -> void:
 	var sp = server_players.get(peer_id, null)
@@ -200,6 +226,20 @@ func _on_item_used(peer_id: int, item_id: String) -> void:
 		return
 	var result = sp.use_consumable(item_id)
 	Network.notify_item_result.rpc_id(peer_id, result.get("success", false), result.get("message", ""), result.get("new_hp", -1), result.get("new_max_hp", -1))
+
+# Resolves a target_id string ("player_<id>" or "enemy_<id>") to a server object.
+# Returns a Dictionary: {type: "player"|"enemy", node: ...}
+func _resolve_target(target_id: String, zone: String) -> Dictionary:
+	if target_id.begins_with("player_"):
+		var tid = target_id.substr(7).to_int()
+		var sp  = server_players.get(tid, null)
+		if sp and sp.zone == zone and not sp.is_dead:
+			return {"type": "player", "node": sp}
+	elif not target_id.is_empty():
+		var enemy = _enemy_nodes.get(target_id, null)
+		if enemy and is_instance_valid(enemy) and enemy.zone_name == zone:
+			return {"type": "enemy", "node": enemy}
+	return {}
 
 func _on_ability_used(peer_id: int, ability_name: String, data: Dictionary) -> void:
 	if not server_players.has(peer_id):
@@ -231,6 +271,148 @@ func _on_ability_used(peer_id: int, ability_name: String, data: Dictionary) -> v
 						var kb = (enemy.global_position - origin).normalized() if do_kb else Vector2.ZERO
 						enemy.take_damage(dmg, kb, sp.get_instance_id())
 					Network.confirm_ability_hit.rpc_id(peer_id, enemy.global_position, dmg)
+
+		"shadow_possession":
+			var caster_pos = data.get("caster_pos", sp.world_pos)
+			var target_id  = data.get("target_id", "")
+			var range_sq   = pow(data.get("range", 320.0), 2)
+			var duration   = data.get("duration", 4.0)
+			var result     = _resolve_target(target_id, sp.zone)
+			if result.is_empty():
+				return
+			var t = result["node"]
+			var t_pos = t.world_pos if result["type"] == "player" else t.global_position
+			if caster_pos.distance_squared_to(t_pos) > range_sq:
+				return
+			if result["type"] == "player":
+				if not are_same_party(peer_id, t.peer_id):
+					t.apply_root(duration)
+					Network.confirm_ability_hit.rpc_id(peer_id, t_pos, 0)
+			elif t.has_method("apply_root"):
+				t.apply_root(duration)
+				Network.confirm_ability_hit.rpc_id(peer_id, t_pos, 0)
+
+		"shadow_strangle":
+			var caster_pos    = data.get("caster_pos", sp.world_pos)
+			var target_id     = data.get("target_id", "")
+			var range_sq      = pow(data.get("range", 320.0), 2)
+			var dmg_tick      = data.get("damage", 12)
+			var tick_interval = data.get("tick_interval", 1.0)
+			var ticks         = data.get("ticks", 4)
+			var result        = _resolve_target(target_id, sp.zone)
+			if result.is_empty():
+				return
+			var t     = result["node"]
+			var t_pos = t.world_pos if result["type"] == "player" else t.global_position
+			if caster_pos.distance_squared_to(t_pos) > range_sq:
+				return
+			# Require target to be rooted by THIS caster's shadow
+			var shadow_id = "shadow_%d" % peer_id
+			var shadow    = _shadow_nodes.get(shadow_id, null)
+			if shadow == null or not shadow.get("_caught"):
+				Network.notify_status.rpc_id(peer_id, peer_id, "strangle_fail", 0.0)
+				return
+			var target_node = result["node"]
+			if not target_node.is_rooted:
+				Network.notify_status.rpc_id(peer_id, peer_id, "strangle_fail", 0.0)
+				return
+			if result["type"] == "player":
+				if not are_same_party(peer_id, t.peer_id):
+					t.apply_dot(dmg_tick, tick_interval, ticks, peer_id)
+					Network.confirm_ability_hit.rpc_id(peer_id, t_pos, dmg_tick)
+					Network.ability_visual.rpc(str(t.peer_id), "strangle")
+			elif t.has_method("apply_dot"):
+				t.apply_dot(dmg_tick, tick_interval, ticks, peer_id)
+				Network.ability_visual.rpc(t.enemy_id, "strangle")
+
+		"shadow_pull":
+			var caster_pos = data.get("caster_pos", sp.world_pos)
+			var target_id  = data.get("target_id", "")
+			var range_sq   = pow(data.get("range", 256.0), 2)
+			var pull_dist  = data.get("pull_dist", 48.0)
+			var result     = _resolve_target(target_id, sp.zone)
+			if result.is_empty():
+				return
+			var t = result["node"]
+			var t_pos = t.world_pos if result["type"] == "player" else t.global_position
+			if caster_pos.distance_squared_to(t_pos) > range_sq:
+				return
+			if result["type"] == "player":
+				if not are_same_party(peer_id, t.peer_id):
+					t.apply_pull(caster_pos, pull_dist)
+					Network.confirm_ability_hit.rpc_id(peer_id, t_pos, 0)
+			elif t.has_method("apply_pull"):
+				# For enemies: just teleport them near caster
+				var dir       = (caster_pos - t.global_position).normalized()
+				t.global_position = caster_pos - dir * pull_dist
+				Network.confirm_ability_hit.rpc_id(peer_id, t_pos, 0)
+
+		"debug_unlock_ability":
+			var ab_id = data.get("ability_id", "")
+			if ab_id != "" and ab_id not in sp.unlocked_abilities:
+				sp.unlocked_abilities.append(ab_id)
+				Database.save_player(sp.username, sp.get_save_data())
+
+		"shadow_possession_start":
+			var caster_pos = data.get("caster_pos", sp.world_pos)
+			var target_id  = data.get("target_id", "")
+			var range_sq   = pow(data.get("range", 320.0), 2)
+			if target_id.is_empty():
+				return
+			var result = _resolve_target(target_id, sp.zone)
+			if result.is_empty():
+				return
+			var t_pos = result["node"].world_pos if result["type"] == "player" else result["node"].global_position
+			if caster_pos.distance_squared_to(t_pos) > range_sq:
+				return
+			# Cancel any existing shadow from this caster
+			var old_id = "shadow_%d" % peer_id
+			if _shadow_nodes.has(old_id):
+				_shadow_nodes[old_id].queue_free()
+				_shadow_nodes.erase(old_id)
+			# Spawn new shadow — set logical properties before add_child so _ready() sees them
+			# global_position must be set AFTER add_child (node needs scene tree for world transform)
+			var shadow_id = old_id
+			var shadow    = Node2D.new()
+			shadow.set_script(load("res://scripts/server_shadow.gd"))
+			shadow.shadow_id     = shadow_id
+			shadow.caster_id     = peer_id
+			shadow.target_id_str = target_id
+			shadow.zone          = sp.zone
+			add_child(shadow)
+			shadow.global_position = caster_pos
+			_shadow_nodes[shadow_id] = shadow
+			Network.shadow_spawn.rpc(shadow_id, peer_id, caster_pos, target_id)
+
+		"shadow_possession_cancel":
+			var sid = "shadow_%d" % peer_id
+			if _shadow_nodes.has(sid):
+				_shadow_nodes[sid]._despawn("cancelled")
+				_shadow_nodes.erase(sid)
+
+		"mass_shadow":
+			var origin   = data.get("caster_pos", sp.world_pos)
+			var radius   = data.get("radius", 160.0)
+			var duration = data.get("duration", 3.0)
+			var radius_sq = radius * radius
+			for oid in server_players:
+				if oid == peer_id:
+					continue
+				var other = server_players[oid]
+				if other.zone != sp.zone or other.is_dead:
+					continue
+				if are_same_party(peer_id, oid):
+					continue
+				if other.world_pos.distance_squared_to(origin) <= radius_sq:
+					other.apply_root(duration)
+					Network.confirm_ability_hit.rpc_id(peer_id, other.world_pos, 0)
+			for enemy in get_tree().get_nodes_in_group("enemy"):
+				if enemy.zone_name != sp.zone:
+					continue
+				if enemy.global_position.distance_squared_to(origin) <= radius_sq:
+					if enemy.has_method("apply_root"):
+						enemy.apply_root(duration)
+					Network.confirm_ability_hit.rpc_id(peer_id, enemy.global_position, 0)
 
 func _on_position_received(peer_id: int, pos: Vector2) -> void:
 	if server_players.has(peer_id):
@@ -288,6 +470,11 @@ func _on_login_request(peer_id: int, username: String) -> void:
 	# world_pos intentionally left at Vector2.ZERO — first client position update
 	# will set it. The rate limiter bypasses distance check when world_pos == ZERO.
 	sp.zone          = player_data.get("zone", "village")
+	sp.clan          = player_data.get("clan", "")
+	sp.element       = player_data.get("element", "")
+	sp.element2      = player_data.get("element2", "")
+	sp.unlocked_abilities = player_data.get("unlocked_abilities", [])
+	sp.hotbar_loadout     = player_data.get("hotbar_loadout", [])
 	sp.stat_strength = player_data.get("stat_str",    5)
 	sp.stat_hp       = player_data.get("stat_hp",     5)
 	sp.stat_chakra   = player_data.get("stat_chakra", 5)
@@ -311,6 +498,14 @@ func _on_login_request(peer_id: int, username: String) -> void:
 	server_players[peer_id] = sp
 	# Send enemy roster for the player's starting zone — same as zone change
 	_send_enemy_roster(peer_id, sp.zone)
+
+func schedule_shadow_clear(shadow_id: String, delay: float) -> void:
+	var t = get_tree().create_timer(delay)
+	t.timeout.connect(func():
+		var net = get_tree().root.get_node_or_null("Network")
+		if net:
+			net.shadow_despawn.rpc(shadow_id + "_clear", false)
+	)
 
 func _on_party_invite_sent(peer_id: int, target_name: String) -> void:
 	print("[SERVER] Party invite: peer %d -> '%s'" % [peer_id, target_name])

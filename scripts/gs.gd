@@ -19,6 +19,7 @@ var world_node:     Node       = null
 
 var remote_player_nodes: Dictionary = {}
 var remote_enemy_nodes:  Dictionary = {}
+var _shadow_visuals:     Dictionary = {}   # shadow_id -> ShadowVisual node
 var _enemy_static_cache: Dictionary = {}  # static enemy data cached per zone
 var _debug_enabled: bool = false  # F1 toggles debug visuals
 var current_zone:   String = "village"  # tracked on every zone load
@@ -43,6 +44,10 @@ func _connect_signals() -> void:
 	Network.enemy_roster_client.connect(_on_enemy_roster)
 	Network.enemy_telegraph_received.connect(_on_enemy_telegraph)
 	Network.kunai_spawned.connect(_on_kunai_spawned)
+	Network.shadow_spawned.connect(_on_shadow_spawned)
+	Network.shadow_moved.connect(_on_shadow_moved)
+	Network.shadow_despawned.connect(_on_shadow_despawned)
+	Network.ability_visual_received.connect(_on_ability_visual)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -402,3 +407,87 @@ func _on_ctx_menu_pressed(id: int) -> void:
 		var lp = _get_local_player()
 		if lp and lp.chat:
 			lp.chat.add_system_message("Sending party invite to %s..." % _ctx_target_username)
+
+# ── Shadow Possession visuals ──────────────────────────────────────────────────
+
+func _on_shadow_spawned(shadow_id: String, caster_peer_id: int, start_pos: Vector2, _target_id_str: String) -> void:
+	# Despawn any existing visual with same id (re-cast)
+	if _shadow_visuals.has(shadow_id):
+		if is_instance_valid(_shadow_visuals[shadow_id]):
+			_shadow_visuals[shadow_id].queue_free()
+		_shadow_visuals.erase(shadow_id)
+
+	var visual = Node2D.new()
+	visual.set_script(load("res://scripts/shadow_visual.gd"))
+	visual.shadow_id       = shadow_id
+	visual.caster_peer_id  = caster_peer_id
+	# Position at origin — the visual manages its own world-space drawing
+	visual.global_position = Vector2.ZERO
+	var scene_root = get_tree().current_scene
+	if scene_root:
+		scene_root.add_child(visual)
+		visual.init_positions(start_pos, start_pos)
+		_shadow_visuals[shadow_id] = visual
+
+func _on_shadow_moved(shadow_id: String, pos: Vector2) -> void:
+	var visual = _shadow_visuals.get(shadow_id, null)
+	if visual and is_instance_valid(visual):
+		visual.move_to(pos)
+
+func _on_ability_visual(target_id_str: String, visual_id: String) -> void:
+	var node: Node = null
+	# Try remote enemy dict first (keyed by enemy_id string e.g. "wolf_0")
+	if remote_enemy_nodes.has(target_id_str):
+		node = remote_enemy_nodes[target_id_str]
+	# Try remote player by peer_id
+	if node == null:
+		var players = get_tree().get_nodes_in_group("remote_players")
+		for p in players:
+			if str(p.peer_id) == target_id_str:
+				node = p
+				break
+	# Try local player
+	if node == null:
+		var lp = get_tree().get_first_node_in_group("local_player")
+		if lp and str(lp.get_multiplayer_authority()) == target_id_str:
+			node = lp
+	if node == null or not is_instance_valid(node):
+		return
+	match visual_id:
+		"strangle":
+			if node.has_method("flash_visual"):
+				node.flash_visual("strangle")
+
+func _on_shadow_despawned(shadow_id: String, hit: bool) -> void:
+	var is_clear  = shadow_id.ends_with("_clear")
+	var lookup_id = shadow_id.trim_suffix("_clear")
+	var visual    = _shadow_visuals.get(lookup_id, null)
+
+	if is_clear:
+		# Shadow ended after catch (cancel/chakra empty) — fade frozen line, end ability
+		if visual and is_instance_valid(visual):
+			visual.play_despawn_effect()
+		_shadow_visuals.erase(lookup_id)
+		_shadow_force_cancel(lookup_id)
+		return
+
+	if hit:
+		# Caught — freeze line, keep draining (force_cancel fires on _clear)
+		if visual and is_instance_valid(visual):
+			visual.play_hit_effect()
+	else:
+		# Missed or cancelled before catch — fade line, end ability now
+		if visual and is_instance_valid(visual):
+			visual.play_despawn_effect()
+		_shadow_visuals.erase(lookup_id)
+		_shadow_force_cancel(lookup_id)
+
+func _shadow_force_cancel(lookup_id: String) -> void:
+	var lp = _get_local_player()
+	if lp == null:
+		return
+	var my_id = multiplayer.get_unique_id()
+	if lookup_id == "shadow_%d" % my_id and lp.hotbar != null:
+		for slot in lp.hotbar.slots:
+			if slot != null and slot.has_method("force_cancel"):
+				slot.force_cancel()

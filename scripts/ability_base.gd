@@ -7,6 +7,7 @@ class_name AbilityBase
 # ============================================================
 
 @export var ability_name:  String = "Unnamed"
+var ability_id:    String = ""   # set by AbilityDB.create_instance
 @export var description:   String = ""
 @export var cooldown:      float  = 3.0
 @export var chakra_cost:   int    = 20

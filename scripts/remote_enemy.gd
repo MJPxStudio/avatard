@@ -285,19 +285,31 @@ func set_attack_range(r: float) -> void:
 		vis.add_child(seg)
 	add_child(vis)
 
+func flash_visual(visual_id: String) -> void:
+	if _sprite == null or not is_instance_valid(_sprite):
+		return
+	var mat = _sprite.material as ShaderMaterial
+	if mat == null:
+		return
+	match visual_id:
+		"strangle":
+			var tween = get_tree().create_tween().set_loops(8)
+			tween.tween_method(func(v): mat.set_shader_parameter("strangle_amount", v), 0.0, 0.85, 0.25)
+			tween.tween_method(func(v): mat.set_shader_parameter("strangle_amount", v), 0.85, 0.0, 0.25)
+
 func _attach_flash_shader(sprite: Node) -> void:
 	var mat    = ShaderMaterial.new()
 	var shader = Shader.new()
 	shader.code = """
 shader_type canvas_item;
-uniform float flash_amount : hint_range(0.0, 1.0) = 0.0;
+uniform float flash_amount    : hint_range(0.0, 1.0) = 0.0;
+uniform float strangle_amount : hint_range(0.0, 1.0) = 0.0;
 uniform bool  outline_active = false;
 uniform vec4  outline_color : source_color = vec4(0.9, 0.1, 0.1, 1.0);
 
 void fragment() {
 	vec4 col = texture(TEXTURE, UV);
 	if (col.a < 0.01 && outline_active) {
-		// Draw outline on transparent pixels bordering opaque ones
 		vec2 px = TEXTURE_PIXEL_SIZE;
 		float n = 0.0;
 		n = max(n, texture(TEXTURE, UV + vec2( px.x, 0.0 )).a);
@@ -308,6 +320,7 @@ void fragment() {
 	} else {
 		if (col.a > 0.01) {
 			col.rgb = mix(col.rgb, vec3(1.0), flash_amount);
+			col.rgb = mix(col.rgb, vec3(0.4, 0.1, 0.8), strangle_amount);
 		}
 		COLOR = col;
 	}

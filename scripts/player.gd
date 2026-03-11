@@ -91,7 +91,8 @@ var deaths:         int  = 0
 var minimap             = null
 var party_hud           = null
 var party_invite_popup  = null
-var hotbar     = null
+var hotbar         = null
+var ability_menu   = null
 var equip_panel  = null
 var dungeon_hud  = null
 var stat_panel  = null  # kept for compat
@@ -114,6 +115,12 @@ var gear_chakra:   int = 0
 var gear_dex:      int = 0
 var gear_int:      int = 0
 var quest_state:   Dictionary = {}   # local mirror of server quest_state
+var clan:               String = ""
+var element:            String = ""
+var element2:           String = ""
+var unlocked_abilities: Array  = []   # ability ids earned from scrolls
+var is_poison_immune:   bool   = false
+var is_rooted:          bool   = false
 var quest_hud:     Node = null
 
 var dodge_chance: float = 0.0
@@ -184,6 +191,9 @@ func connect_network_signals() -> void:
 		net.rank_up_client.connect(_on_rank_up)
 	if net and not net.item_result_client.is_connected(_on_item_result):
 		net.item_result_client.connect(_on_item_result)
+		net.status_applied.connect(_on_status_applied)
+		net.status_ended.connect(_on_status_ended)
+		net.pull_received.connect(_on_pull_received)
 
 func _on_server_damage(amount: int, knockback_dir: Vector2) -> void:
 	# amount=0 is the server's respawn signal after death timer
@@ -194,7 +204,6 @@ func _on_server_damage(amount: int, knockback_dir: Vector2) -> void:
 		else:
 			# is_dead should be true here — if it's not, the fatal hit was dropped by
 			# client-side invuln. Force-respawn anyway since server is authoritative.
-			print("[CLIENT] WARNING: respawn signal but is_dead==false — forcing respawn")
 			_respawn()
 		return
 	# Server is authoritative — clear client invuln before applying damage.
@@ -472,6 +481,13 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		move_and_slide()
 		return
+	# Drain chakra for active toggle abilities (e.g. Shadow Possession)
+	if hotbar != null:
+		for slot in hotbar.slots:
+			if slot is AbilityBase and slot.has_method("drain_tick"):
+				if slot.is_active():
+					slot.drain_tick(self, delta)
+				#else: not active, skip
 
 	if invuln_ticks > 0:
 		invuln_ticks -= delta
@@ -548,6 +564,12 @@ func _physics_process(delta: float) -> void:
 			if equip_panel != null and inventory != null:
 				equip_panel.visible = inventory.visible
 
+		if Input.is_action_just_pressed("ability_menu"):
+			if ability_menu:
+				ability_menu.toggle()
+				if ability_menu.visible:
+					ability_menu._refresh()
+			return
 		if Input.is_action_just_pressed("stat_panel"):
 			if char_info != null:
 				char_info.toggle()
@@ -579,6 +601,8 @@ func _physics_process(delta: float) -> void:
 			_set_target(null)
 
 	var raw_input = _get_input()
+	if is_rooted:
+		raw_input = Vector2.ZERO   # can't move while shadow-bound
 	if raw_input != Vector2.ZERO and not is_attacking:
 		_update_facing(raw_input)
 
@@ -594,23 +618,29 @@ func _physics_process(delta: float) -> void:
 			last_safe_pos   = grid_pos
 			is_stepping     = false
 			velocity        = Vector2.ZERO
-			if not is_attacking:
+			if not is_attacking and not is_rooted:
 				var input = _get_input()
 				if input != Vector2.ZERO:
 					_try_step(input, current_step_rate)
 				else:
 					_play_idle()
+			elif not is_attacking:
+				_play_idle()
 		else:
 			velocity = to_target.normalized() * slide_speed
 	else:
 		step_timer -= delta
 		if step_timer <= 0 and not is_attacking:
-			var input = _get_input()
-			if input != Vector2.ZERO:
-				_try_step(input, current_step_rate)
-			else:
+			if is_rooted:
 				velocity = Vector2.ZERO
 				_play_idle()
+			else:
+				var input = _get_input()
+				if input != Vector2.ZERO:
+					_try_step(input, current_step_rate)
+				else:
+					velocity = Vector2.ZERO
+					_play_idle()
 
 	move_and_slide()
 
@@ -940,6 +970,10 @@ func use_item(item: Dictionary) -> void:
 	var effect = item.get("use_effect", {})
 	if effect.is_empty():
 		return
+	# Handle ability scroll unlock locally — no server round-trip needed
+	if effect.get("type", "") == "unlock_ability":
+		_unlock_ability(item, effect.get("ability_id", ""))
+		return
 	# Block heal items client-side if already full — no need to hit server
 	if effect.get("type", "") == "heal_hp" and current_hp >= max_hp:
 		if chat and chat.has_method("add_system_message"):
@@ -952,6 +986,23 @@ func use_item(item: Dictionary) -> void:
 		if inventory != null and inventory.has_method("remove_item"):
 			inventory.remove_item(item_id, 1)
 
+func _on_status_applied(status_id: String, _duration: float) -> void:
+	match status_id:
+		"root":
+			is_rooted = true
+		"dot":
+			pass
+
+func _on_status_ended(status_id: String) -> void:
+	match status_id:
+		"root":
+			is_rooted = false
+
+func _on_pull_received(new_pos: Vector2) -> void:
+	global_position = new_pos
+	grid_pos        = new_pos
+	target_pos      = new_pos
+
 func _on_item_result(success: bool, message: String, new_hp: int = -1, new_max_hp: int = -1) -> void:
 	var chat = get_tree().root.get_node_or_null("Main/Chat")
 	if chat and chat.has_method("add_system_message"):
@@ -961,6 +1012,59 @@ func _on_item_result(success: bool, message: String, new_hp: int = -1, new_max_h
 			max_hp = new_max_hp
 		current_hp = min(new_hp, max_hp)
 		_update_hud()
+
+# ── Clan / Element / Ability unlock ──────────────────────────────────────────
+
+func apply_clan_passive() -> void:
+	if clan == "":
+		return
+	var passive = ClanDB.get_passive(clan)
+	if passive.is_empty():
+		return
+	# HP bonus
+	if passive.has("hp_bonus"):
+		max_hp += passive["hp_bonus"]
+		current_hp = min(current_hp, max_hp)
+	# Chakra bonus
+	if passive.has("chakra_bonus"):
+		max_chakra += passive["chakra_bonus"]
+	# Poison immunity — used by combat/status system
+	if passive.get("poison_immune", false):
+		is_poison_immune = true
+
+func _unlock_ability(item: Dictionary, ability_id: String) -> void:
+	if ability_id == "":
+		return
+	if not AbilityDB.exists(ability_id):
+		if chat: chat.add_system_message("Unknown ability scroll.")
+		return
+	# Must match player's clan or element
+	var ab = AbilityDB.get_ability(ability_id)
+	var source: String = ab.get("source", "")
+	var valid = false
+	if source == "clan:" + clan:
+		valid = true
+	elif source == "element:" + element:
+		valid = true
+	elif source == "element:" + element2 and element2 != "":
+		valid = true
+	if not valid:
+		if chat: chat.add_system_message("This scroll is not for your clan or element.")
+		return
+	# Rank gate
+	var min_rank = ab.get("min_rank", "")
+	if not RankDB.meets_rank_requirement(rank, min_rank):
+		if chat: chat.add_system_message("You must be %s rank to learn %s." % [min_rank, ab["name"]])
+		return
+	# Already known?
+	if ability_id in unlocked_abilities:
+		if chat: chat.add_system_message("You already know %s." % ab["name"])
+		return
+	# Unlock it
+	unlocked_abilities.append(ability_id)
+	if inventory != null:
+		inventory.remove_item(item.get("id", ""), 1)
+	if chat: chat.add_system_message("[Ability Learned] %s" % ab["name"])
 
 func _on_rank_up(new_rank: String) -> void:
 	rank = new_rank
@@ -1139,8 +1243,7 @@ func take_damage(amount: int, knockback_dir: Vector2 = Vector2.ZERO, kb_force: f
 				else:
 					main.add_child(rs)
 					respawn_screen = rs
-					print("[CLIENT] Respawn screen created OK")
-		# Server controls respawn timing — sends sync_damage(0) when ready
+				# Server controls respawn timing — sends sync_damage(0) when ready
 
 # ------ TARGETING ---------------------------------------------------------------
 

@@ -121,6 +121,217 @@ const _ITEMS: Dictionary = {
 		"use_effect":   {"type": "cure_poison"},
 		"min_rank":     "Academy Student",
 	},
+	# ── Ability Scrolls (Hyuga) ───────────────────────────────────────────────
+	# Dropped by dungeons — teach the player an ability permanently on use.
+	"scroll_gentle_fist": {
+		"id": "scroll_gentle_fist", "name": "Gentle Fist Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_taijutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "gentle_fist"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_palm_thrust": {
+		"id": "scroll_palm_thrust", "name": "Palm Thrust Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_taijutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "palm_thrust"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_rotation": {
+		"id": "scroll_rotation", "name": "Rotation Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "rotation"},
+		"min_rank": "Genin",
+	},
+	"scroll_64_palms": {
+		"id": "scroll_64_palms", "name": "64 Palms Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "64_palms"},
+		"min_rank": "Chunin",
+	},
+	"scroll_128_palms": {
+		"id": "scroll_128_palms", "name": "128 Palms Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "128_palms"},
+		"min_rank": "Jonin",
+	},
+
+	# ── Ability Scrolls (Nara) ────────────────────────────────────────────────
+	"scroll_shadow_possession": {
+		"id": "scroll_shadow_possession", "name": "Shadow Possession Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "shadow_possession"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_shadow_strangle": {
+		"id": "scroll_shadow_strangle", "name": "Shadow Strangle Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "shadow_strangle"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_shadow_pull": {
+		"id": "scroll_shadow_pull", "name": "Shadow Pull Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "shadow_pull"},
+		"min_rank": "Genin",
+	},
+	"scroll_mass_shadow": {
+		"id": "scroll_mass_shadow", "name": "Mass Shadow Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "mass_shadow"},
+		"min_rank": "Special Jonin",
+	},
+
+	# ── Ability Scrolls (Aburame) ─────────────────────────────────────────────
+	"scroll_bug_swarm": {
+		"id": "scroll_bug_swarm", "name": "Bug Swarm Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "bug_swarm"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_parasite": {
+		"id": "scroll_parasite", "name": "Parasite Insect Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "parasite"},
+		"min_rank": "Genin",
+	},
+	"scroll_insect_cocoon": {
+		"id": "scroll_insect_cocoon", "name": "Insect Cocoon Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "insect_cocoon"},
+		"min_rank": "Genin",
+	},
+	"scroll_hive_burst": {
+		"id": "scroll_hive_burst", "name": "Hive Burst Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "hive_burst"},
+		"min_rank": "Chunin",
+	},
+	"scroll_bug_cloak": {
+		"id": "scroll_bug_cloak", "name": "Bug Cloak Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "bug_cloak"},
+		"min_rank": "Chunin",
+	},
+
+	# ── Ability Scrolls (Clay) ────────────────────────────────────────────────
+	"scroll_c1_spiders": {
+		"id": "scroll_c1_spiders", "name": "C1 Clay Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "c1_spiders"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_c2_dragon": {
+		"id": "scroll_c2_dragon", "name": "C2 Clay Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "c2_dragon"},
+		"min_rank": "Chunin",
+	},
+	"scroll_c3_bomb": {
+		"id": "scroll_c3_bomb", "name": "C3 Clay Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "c3_bomb"},
+		"min_rank": "Special Jonin",
+	},
+	"scroll_c4_karura": {
+		"id": "scroll_c4_karura", "name": "C4 Karura Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "c4_karura"},
+		"min_rank": "Jonin",
+	},
+	"scroll_katsu": {
+		"id": "scroll_katsu", "name": "Katsu Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "katsu"},
+		"min_rank": "Academy Student",
+	},
+
+	# ── Ability Scrolls (Fire) ────────────────────────────────────────────────
+	"scroll_fireball": {
+		"id": "scroll_fireball", "name": "Fireball Jutsu Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_fire.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "fireball"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_phoenix_flower": {
+		"id": "scroll_phoenix_flower", "name": "Phoenix Flower Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_fire.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "phoenix_flower"},
+		"min_rank": "Genin",
+	},
+	"scroll_fire_wall": {
+		"id": "scroll_fire_wall", "name": "Fire Wall Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_fire.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "fire_wall"},
+		"min_rank": "Chunin",
+	},
+
+	# ── Ability Scrolls (Lightning) ───────────────────────────────────────────
+	"scroll_lightning_bolt": {
+		"id": "scroll_lightning_bolt", "name": "Lightning Bolt Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_lightning.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "lightning_bolt"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_chidori": {
+		"id": "scroll_chidori", "name": "Chidori Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_lightning.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "chidori"},
+		"min_rank": "Chunin",
+	},
+	"scroll_lightning_field": {
+		"id": "scroll_lightning_field", "name": "Lightning Field Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_lightning.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "lightning_field"},
+		"min_rank": "Special Jonin",
+	},
+
+	# ── Ability Scrolls (Earth) ───────────────────────────────────────────────
+	"scroll_earth_wall": {
+		"id": "scroll_earth_wall", "name": "Earth Wall Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_earth.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "earth_wall"},
+		"min_rank": "Academy Student",
+	},
+	"scroll_mud_river": {
+		"id": "scroll_mud_river", "name": "Mud River Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_earth.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "mud_river"},
+		"min_rank": "Genin",
+	},
+	"scroll_earth_spikes": {
+		"id": "scroll_earth_spikes", "name": "Earth Spikes Scroll",
+		"stackable": false, "quantity": 1,
+		"icon_path": "res://sprites/player/Items/scroll_earth.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "earth_spikes"},
+		"min_rank": "Chunin",
+	},
+
 }
 
 # ── Public API ────────────────────────────────────────────────────────────────

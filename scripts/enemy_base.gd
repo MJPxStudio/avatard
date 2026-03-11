@@ -59,8 +59,47 @@ func _setup_collision() -> void:
 	vis.z_index  = 2
 	add_child(vis)
 
+var is_rooted:    bool  = false
+var _root_timer:  float = 0.0
+var _dot_damage:     int   = 0
+var _dot_ticks_left: int   = 0
+var _dot_interval:   float = 1.0
+var _dot_timer:      float = 0.0
+
+func apply_root(duration: float) -> void:
+	is_rooted   = true
+	_root_timer = duration
+
+var _dot_caster_peer: int = 0
+
+func apply_dot(damage: int, interval: float, ticks: int, caster_peer: int = 0) -> void:
+	_dot_damage       = damage
+	_dot_interval     = interval
+	_dot_ticks_left   = ticks
+	_dot_timer        = interval
+	_dot_caster_peer  = caster_peer
+	# Flash the enemy on all clients immediately
+	pass
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
+		return
+	if _dot_ticks_left > 0:
+		_dot_timer -= delta
+		if _dot_timer <= 0.0:
+			_dot_timer = _dot_interval
+			take_damage(_dot_damage, Vector2.ZERO)
+			_dot_ticks_left -= 1
+			if _dot_caster_peer > 0:
+				var net = get_tree().root.get_node_or_null("Network")
+				if net:
+					net.confirm_ability_hit.rpc_id(_dot_caster_peer, global_position, _dot_damage)
+	if is_rooted:
+		_root_timer -= delta
+		if _root_timer <= 0.0:
+			is_rooted = false
+		velocity = Vector2.ZERO
+		move_and_slide()
 		return
 	attack_timer -= delta
 	if stagger_timer > 0:

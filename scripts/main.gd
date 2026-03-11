@@ -39,6 +39,11 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	player.stat_int      = player_data.get("stat_int", 5)
 	player.stat_points   = player_data.get("stat_points", 0)
 	player.quest_state   = player_data.get("quest_state", {})
+	player.clan               = player_data.get("clan", "")
+	player.element            = player_data.get("element", "")
+	player.element2           = player_data.get("element2", "")
+	player.unlocked_abilities = player_data.get("unlocked_abilities", [])
+	var hotbar_loadout = player_data.get("hotbar_loadout", [])
 	player.level         = player_data.get("level", 1)
 	player.current_exp   = player_data.get("exp", 0)
 	player.current_hp    = player_data.get("hp", -1)  # -1 means full — resolved after apply_stats
@@ -49,6 +54,8 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	player.max_exp = _me
 	player.kills         = player_data.get("kills", 0)
 	player.deaths        = player_data.get("deaths", 0)
+	# Apply clan passive after stats are set so bonuses stack correctly
+	player.apply_clan_passive()
 	player.apply_stats({
 		"hp":       player.stat_hp,
 		"chakra":   player.stat_chakra,
@@ -68,7 +75,11 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 		if parts.size() > 0:
 			player.set_hair_style(parts[-1])
 	if saved_appearance.has("hair_color"):
-		player.set_hair_color(saved_appearance["hair_color"])
+		var hc = saved_appearance["hair_color"]
+		if hc is Array and hc.size() == 4:
+			hc = Color(hc[0], hc[1], hc[2], hc[3])
+		if hc is Color:
+			player.set_hair_color(hc)
 	# Send appearance to server so other players see it immediately
 	call_deferred("_send_initial_appearance", player)
 
@@ -78,8 +89,10 @@ func on_player_logged_in(player_data: Dictionary) -> void:
 	_setup_hud()
 	_setup_inventory()
 	_setup_hotbar()
+	_setup_ability_menu(hotbar_loadout)
 	_setup_equip_panel()
 	_restore_equipped(player_data.get("equipped", {}))
+	_setup_ability_menu(hotbar_loadout)
 	_setup_dungeon_hud()
 	_setup_char_info()
 	_setup_target_hud()
@@ -333,10 +346,16 @@ func _setup_hotbar() -> void:
 	add_child(hotbar)
 	$Player.hotbar = hotbar
 	hotbar.set_player($Player)
-	# Default ability loadout
-	hotbar.set_ability(0, AbilityFireBurst.new())
-	hotbar.set_ability(1, AbilityMedical.new())
-	hotbar.set_ability(2, AbilitySubstitution.new())
+	# Ability loadout restored by _setup_ability_menu from saved hotbar_loadout
+
+func _setup_ability_menu(loadout: Array = []) -> void:
+	var menu = CanvasLayer.new()
+	menu.set_script(load("res://scripts/ability_menu.gd"))
+	add_child(menu)
+	$Player.ability_menu = menu
+	menu.set_player($Player)
+	if not loadout.is_empty():
+		menu.restore_loadout(loadout)
 
 func _setup_dungeon_hud() -> void:
 	var hud = load("res://scripts/dungeon_hud.gd").new()
@@ -357,6 +376,34 @@ func _setup_equip_panel() -> void:
 	equip.set_player($Player)
 	if $Player.inventory:
 		$Player.inventory.equip_panel_ref = equip
+
+func _restore_hotbar_loadout(loadout: Array) -> void:
+	var player = $Player
+	if player.hotbar == null or loadout.is_empty():
+		return
+	for i in range(min(loadout.size(), player.hotbar.slots.size())):
+		var ab_id = loadout[i]
+		if ab_id == "" or ab_id == null:
+			continue
+		var ability = AbilityDB.create_instance(ab_id)
+		if ability:
+			player.hotbar.slots[i] = ability
+			player.hotbar._refresh_slot(i)
+	player.hotbar.loadout_changed.connect(_save_hotbar_loadout)
+
+func _save_hotbar_loadout() -> void:
+	var player = $Player
+	if player.hotbar == null:
+		return
+	var loadout: Array = []
+	for slot in player.hotbar.slots:
+		if slot is AbilityBase and slot.ability_id != "":
+			loadout.append(slot.ability_id)
+		else:
+			loadout.append("")
+	var net = get_tree().root.get_node_or_null("Network")
+	if net and net.is_network_connected():
+		net.send_hotbar_loadout(loadout)
 
 func _setup_char_info() -> void:
 	var ci = load("res://scenes/stat_panel.tscn").instantiate()
