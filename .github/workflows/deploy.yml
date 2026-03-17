@@ -1,0 +1,62 @@
+name: Deploy to Dev Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Godot
+        run: |
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
+          unzip -q Godot_v4.3-stable_linux.x86_64.zip
+          mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
+          chmod +x /usr/local/bin/godot
+
+      - name: Install Godot Export Templates
+        run: |
+          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
+          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
+          unzip -q Godot_v4.3-stable_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
+
+      - name: Set server main scene
+        run: |
+          cd avatard
+          sed -i 's|run/main_scene=.*|run/main_scene="res://scenes/server_main.tscn"|' project.godot
+
+      - name: Export Linux Server build
+        run: |
+          cd avatard
+          godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
+
+      - name: Deploy to server
+        env:
+          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          echo "$SSH_KEY" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP"
+
+          # Stop both servers
+          $SSH "systemctl stop avatard-dev"
+
+          # Upload new files to dev
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no avatard-server.x86_64 $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
+          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no avatard-server.pck $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
+
+          # Make executable and restart dev
+          $SSH "chmod +x /opt/avatard/dev/avatard-server.x86_64 && systemctl start avatard-dev"
+
+          # Clean up
+          rm /tmp/deploy_key
+
+          echo "Dev server updated successfully"

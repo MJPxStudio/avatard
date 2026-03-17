@@ -212,6 +212,13 @@ func _emit_config_ready() -> void:
 	config_ready.emit()
 
 func launch_as_server() -> void:
+	# Allow port override via command line: --port 7778 or -- --port 7778
+	var args = OS.get_cmdline_args() + OS.get_cmdline_user_args()
+	for i in range(args.size() - 1):
+		if args[i] == "--port":
+			PORT = int(args[i + 1])
+			print("[NETWORK] Port overridden to %d" % PORT)
+			break
 	is_server = true
 	var peer  = ENetMultiplayerPeer.new()
 	if peer.create_server(PORT, MAX_CLIENTS) != OK:

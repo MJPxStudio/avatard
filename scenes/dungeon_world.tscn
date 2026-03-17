@@ -8,3 +8,6 @@ script = ExtResource("1_dworld")
 
 [node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=1099590625]
 tile_set = ExtResource("2_51k6u")
+
+[node name="TileMapLayer2" type="TileMapLayer" parent="." unique_id=2029051245]
+tile_set = ExtResource("2_51k6u")
