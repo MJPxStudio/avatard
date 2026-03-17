@@ -46,10 +46,8 @@ func _build_village() -> void:
 	# --- SCROLL VENDOR (debug) ---
 	_make_scroll_vendor(Vector2(500, 530))
 
-	# --- DUNGEON PORTAL ---
-	var portal = load("res://scripts/dungeon_portal.gd").new()
-	portal.position = Vector2(800, 0)
-	add_child(portal)
+	# --- DUNGEON PORTALS ---
+	_make_dungeon_portal(Vector2(800, 0), "wolf_den")
 
 	# --- BOUNDARY WALLS --- (re-enable once map is painted)
 	#_make_wall(Vector2(0, -710),   Vector2(2000, 40))   # top
@@ -131,3 +129,9 @@ func _make_wall(center: Vector2, size: Vector2) -> void:
 	shape.shape = rect
 	body.add_child(shape)
 	add_child(body)
+
+func _make_dungeon_portal(pos: Vector2, dungeon_id: String) -> void:
+	var portal = load("res://scripts/dungeon_portal.gd").new()
+	portal.dungeon_id = dungeon_id
+	portal.position = pos
+	add_child(portal)

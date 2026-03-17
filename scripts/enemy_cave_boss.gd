@@ -91,6 +91,10 @@ func _physics_process(delta: float) -> void:
 func _process_aggro(_delta: float) -> void:
 	if target == null:
 		return
+	if target.is_immune or target.is_spinning:
+		target = null
+		state  = "return"
+		return
 	var to_target = target.world_pos - global_position
 	var dist      = to_target.length()
 	var speed     = move_speed * (1.3 if _enraged else 1.0)

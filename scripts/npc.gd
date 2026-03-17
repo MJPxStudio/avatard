@@ -8,8 +8,9 @@ extends Node2D
 
 const QuestDB = preload("res://scripts/quest_db.gd")
 
-@export var npc_name:  String = "NPC"
-@export var dialogue:  Array  = []   # Array[String] — one entry per page
+@export var npc_name:           String        = "NPC"
+@export var dialogue:          Array[String] = []   # one entry per dialogue page
+@export var opens_mission_board: bool          = false  # tick for Mission Assignment Jonin
 
 var _in_range:    bool  = false
 var _prompt:      Label = null
@@ -107,14 +108,23 @@ func _open_dialogue() -> void:
 	var main = get_tree().root.get_node_or_null("Main")
 	if main == null:
 		return
+	# Single player reference used throughout
+	var player = get_tree().get_first_node_in_group("local_player")
+	var qs = player.quest_state if player else {}
+	var ctx = QuestDB.get_quest_context(npc_name, qs)
+	# Notify server — used for deliver mission completion checks
+	var net = get_tree().root.get_node_or_null("Network")
+	if net and net.is_network_connected():
+		net.notify_npc_talk.rpc_id(1, npc_name)
+	# Open mission board if flagged and no quest to complete
+	if opens_mission_board and ctx.is_empty():
+		var board = player.get_meta("mission_board") if player and player.has_meta("mission_board") else null
+		if board:
+			board.open()
+		return
 	# Check no dialogue already open
 	if main.get_node_or_null("DialogueBox") != null:
 		return
-	var player = get_tree().get_first_node_in_group("local_player")
-	# Check for quest context first — overrides default dialogue
-	var ctx: Dictionary = {}
-	if player:
-		ctx = QuestDB.get_quest_context(npc_name, player.quest_state)
 	var pages: Array
 	if not ctx.is_empty():
 		pages = ctx["pages"]

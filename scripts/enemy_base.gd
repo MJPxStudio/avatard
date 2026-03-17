@@ -2,8 +2,7 @@ extends CharacterBody2D
 class_name EnemyBase
 
 # ============================================================
-# ENEMY BASE — Server-side. enemy_id is a stable String.
-# On death, notifies ServerMain.on_enemy_died() for respawn.
+# ENEMY BASE — Server-side. Pixel movement via velocity.
 # ============================================================
 
 @export var enemy_name:       String  = "Enemy"
@@ -19,19 +18,19 @@ class_name EnemyBase
 @export var gold_reward:      int     = 5
 @export var drop_chance:      float   = 0.15
 
-var enemy_id:      String  = ""       # Set by server_main, e.g. "wolf_0"
+var enemy_id:      String  = ""
 var level:         int     = 1
-var stagger_timer: float  = 0.0       # When > 0, movement frozen (hit stagger)
+var stagger_timer: float   = 0.0
 var hitbox_size:   Vector2 = Vector2(14, 14)
 var hp:            int     = 50
 var is_dead:       bool    = false
 var spawn_point:   Vector2 = Vector2.ZERO
 var target:        Node    = null
-var _last_attacker: Node    = null   # most recent player to deal damage — becomes new target
 var state:         String  = "idle"
 var attack_timer:  float   = 0.0
 var wander_timer:  float   = 0.0
 var wander_target: Vector2 = Vector2.ZERO
+var _spawn_grace:  float   = 2.5   # seconds before enemy can detect/aggro — covers entrance walk
 
 const WANDER_RADIUS   = 40.0
 const WANDER_INTERVAL = 3.0
@@ -44,6 +43,14 @@ func _ready() -> void:
 	wander_target = global_position
 	_setup_collision()
 
+func apply_dungeon_scaling(hp_mult: float, dmg_mult: float, speed_mult: float, aggro_mult: float) -> void:
+	max_hp           = int(max_hp * hp_mult)
+	hp               = max_hp
+	attack_damage    = int(attack_damage * dmg_mult)
+	move_speed       = move_speed * speed_mult
+	attack_cooldown  = max(0.5, attack_cooldown / aggro_mult)   # higher aggro = faster attacks
+	detection_radius = detection_radius * min(aggro_mult, 2.0)  # wider detection
+
 func _setup_collision() -> void:
 	var shape   = CollisionShape2D.new()
 	var rect    = RectangleShape2D.new()
@@ -51,7 +58,7 @@ func _setup_collision() -> void:
 	shape.shape = rect
 	add_child(shape)
 	collision_layer = 4
-	collision_mask  = 5   # 1 = player, 4 = other enemies
+	collision_mask  = 5
 	var vis      = ColorRect.new()
 	vis.size     = Vector2(14, 14)
 	vis.position = Vector2(-7, -7)
@@ -59,18 +66,19 @@ func _setup_collision() -> void:
 	vis.z_index  = 2
 	add_child(vis)
 
-var is_rooted:    bool  = false
-var _root_timer:  float = 0.0
+var is_rooted:       bool  = false
+var knockback_timer: float = 0.0
+var is_immune:       bool  = false
+var _root_timer:     float = 0.0
 var _dot_damage:     int   = 0
 var _dot_ticks_left: int   = 0
 var _dot_interval:   float = 1.0
 var _dot_timer:      float = 0.0
+var _dot_caster_peer: int  = 0
 
 func apply_root(duration: float) -> void:
 	is_rooted   = true
 	_root_timer = duration
-
-var _dot_caster_peer: int = 0
 
 func apply_dot(damage: int, interval: float, ticks: int, caster_peer: int = 0) -> void:
 	_dot_damage       = damage
@@ -78,22 +86,27 @@ func apply_dot(damage: int, interval: float, ticks: int, caster_peer: int = 0) -
 	_dot_ticks_left   = ticks
 	_dot_timer        = interval
 	_dot_caster_peer  = caster_peer
-	# Flash the enemy on all clients immediately
-	pass
 
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		return
+	if knockback_timer > 0.0:
+		knockback_timer -= delta
 	if _dot_ticks_left > 0:
 		_dot_timer -= delta
 		if _dot_timer <= 0.0:
 			_dot_timer = _dot_interval
-			take_damage(_dot_damage, Vector2.ZERO)
-			_dot_ticks_left -= 1
+			var _dot_attacker_id = null
 			if _dot_caster_peer > 0:
+				var _sm = get_tree().root.get_node_or_null("ServerMain")
+				if _sm and _sm.server_players.has(_dot_caster_peer):
+					_dot_attacker_id = _sm.server_players[_dot_caster_peer].get_instance_id()
 				var net = get_tree().root.get_node_or_null("Network")
 				if net:
 					net.confirm_ability_hit.rpc_id(_dot_caster_peer, global_position, _dot_damage)
+					net.ability_visual.rpc(enemy_id, "strangle")
+			take_damage(_dot_damage, Vector2.ZERO, _dot_attacker_id)
+			_dot_ticks_left -= 1
 	if is_rooted:
 		_root_timer -= delta
 		if _root_timer <= 0.0:
@@ -102,6 +115,11 @@ func _physics_process(delta: float) -> void:
 		move_and_slide()
 		return
 	attack_timer -= delta
+	if _spawn_grace > 0.0:
+		_spawn_grace -= delta
+		velocity = Vector2.ZERO
+		move_and_slide()
+		return
 	if stagger_timer > 0:
 		stagger_timer -= delta
 		velocity = Vector2.ZERO
@@ -110,12 +128,36 @@ func _physics_process(delta: float) -> void:
 	_update_state()
 	_process_state(delta)
 	move_and_slide()
+	# Clamp to dungeon floor bounds when in an instanced dungeon zone
+	if zone_name.count("_") >= 2:  # e.g. "wolf_den_1"
+		# Get bounds from the active floor controller so they match the current room size
+		var d_hw := 360.0
+		var d_hh := 216.0
+		var sm = get_tree().root.get_node_or_null("ServerMain")
+		if sm and sm._dungeon_manager:
+			var inst_id = sm._dungeon_manager.get_instance_id_for_zone(zone_name)
+			if inst_id >= 0:
+				var fc = sm._dungeon_manager._floor_controllers.get(inst_id, null)
+				if fc:
+					var r = fc._floor_layout.get("rooms", {}).get(fc._current_room_id, {})
+					if not r.is_empty():
+						const TILE_S   = 32
+						const WALL_T   = 2
+						var tw = r.get("tiles_w", 28)
+						var th = r.get("tiles_h", 19)
+						d_hw = float(tw * TILE_S / 2 - WALL_T * TILE_S - 8)
+						d_hh = float(th * TILE_S / 2 - WALL_T * TILE_S - 8)
+		global_position = Vector2(
+			clamp(global_position.x, -d_hw, d_hw),
+			clamp(global_position.y, -d_hh, d_hh)
+		)
 
 func _update_state() -> void:
 	match state:
 		"idle", "return":
 			var nearest = _find_nearest_player()
 			if nearest != null:
+				print("[ENEMY %s] detected %s dist=%.1f" % [enemy_id, nearest.username, global_position.distance_to(nearest.world_pos)])
 				target = nearest
 				state  = "aggro"
 		"aggro":
@@ -123,7 +165,6 @@ func _update_state() -> void:
 				state  = "return"
 				target = null
 				return
-			# Drop target if they've zoned out — prevents cross-zone damage
 			if target.zone != zone_name:
 				state  = "return"
 				target = null
@@ -154,6 +195,10 @@ func _process_idle(delta: float) -> void:
 func _process_aggro(_delta: float) -> void:
 	if target == null:
 		return
+	if target.is_immune or target.is_spinning:
+		target = null
+		state  = "return"
+		return
 	var target_pos = target.world_pos
 	var to_target  = target_pos - global_position
 	var dist       = to_target.length()
@@ -175,7 +220,6 @@ func _process_return(_delta: float) -> void:
 		_on_return_complete()
 
 func _on_return_complete() -> void:
-	# Override in subclasses to change reset behavior
 	hp = max_hp
 
 func _telegraph_attack() -> void:
@@ -194,7 +238,6 @@ func _do_attack() -> void:
 		target = null
 		state  = "return"
 		return
-	# Distance guard — only deal damage if still physically in range
 	if global_position.distance_to(target.world_pos) > attack_range * 1.2:
 		return
 	var kb_dir = (target.world_pos - global_position).normalized()
@@ -212,6 +255,8 @@ func _find_nearest_player() -> Node:
 			continue
 		if sp.zone != zone_name:
 			continue
+		if sp.is_immune or sp.is_spinning or sp.is_ghost:
+			continue
 		var dist = global_position.distance_to(sp.world_pos)
 		if dist < nearest_dist:
 			nearest_dist = dist
@@ -219,10 +264,14 @@ func _find_nearest_player() -> Node:
 	return nearest
 
 func take_damage(amount: int, knockback_dir: Vector2, attacker_id = null) -> void:
-	if is_dead:
+	if is_dead or is_immune:
 		return
 	hp = max(0, hp - amount)
-	stagger_timer = 0.3   # Freeze movement briefly on hit
+	stagger_timer = 0.3
+	if knockback_dir != Vector2.ZERO:
+		var sm = get_tree().root.get_node_or_null("ServerMain")
+		if sm and sm.has_method("cancel_shadows_for_enemy"):
+			sm.cancel_shadows_for_enemy(self)
 	if attacker_id != null:
 		var net = get_tree().root.get_node_or_null("Network")
 		var sm  = get_tree().root.get_node_or_null("ServerMain")
@@ -231,11 +280,16 @@ func take_damage(amount: int, knockback_dir: Vector2, attacker_id = null) -> voi
 				var sp = sm.server_players[pid]
 				if sp.get_instance_id() == attacker_id:
 					net.confirm_hit.rpc_id(pid, global_position, amount)
-					# Switch aggro to whoever just hit us
 					if sp.zone == zone_name and sp != target:
 						target = sp
 						state  = "aggro"
 					break
+	var net_hf = get_tree().root.get_node_or_null("Network")
+	var sm_hf  = get_tree().root.get_node_or_null("ServerMain")
+	if net_hf and sm_hf:
+		for pid in sm_hf.server_players:
+			if sm_hf.server_players[pid].zone == zone_name:
+				net_hf.enemy_hit_flash.rpc_id(pid, enemy_id)
 	if hp <= 0:
 		_die(attacker_id)
 
@@ -254,7 +308,6 @@ func _give_rewards(killer_instance_id) -> void:
 	var sm  = get_tree().root.get_node_or_null("ServerMain")
 	if net == null or sm == null:
 		return
-	# Find killer peer id from instance id
 	var killer_peer_id = -1
 	for pid in sm.server_players:
 		if sm.server_players[pid].get_instance_id() == killer_instance_id:
@@ -265,7 +318,6 @@ func _give_rewards(killer_instance_id) -> void:
 	var item_drop = ""
 	if randf() < drop_chance:
 		item_drop = _roll_item_drop()
-	# Build list of XP recipients: killer + party members in same zone
 	var recipients: Array = [killer_peer_id]
 	if sm._party_in_party.has(killer_peer_id):
 		var party_id = sm._party_in_party[killer_peer_id]
@@ -273,7 +325,6 @@ func _give_rewards(killer_instance_id) -> void:
 			if pid != killer_peer_id and sm.server_players.has(pid):
 				if sm.server_players[pid].zone == sm.server_players[killer_peer_id].zone:
 					recipients.append(pid)
-	# Shared XP: full reward to killer, half to party members nearby
 	for pid in recipients:
 		var sp = sm.server_players.get(pid, null)
 		if sp == null:
@@ -281,10 +332,8 @@ func _give_rewards(killer_instance_id) -> void:
 		var share = xp_reward if pid == killer_peer_id else xp_reward / 2
 		sp.grant_xp(share)
 		sp.kills += 1 if pid == killer_peer_id else 0
-		# Track kill quest progress for the killer only
 		if pid == killer_peer_id:
 			sp.check_kill_quest(enemy_name)
-	# Notify killer of party members who received shared XP
 	if recipients.size() > 1:
 		var shared_names: Array = []
 		for pid in recipients:
@@ -292,7 +341,20 @@ func _give_rewards(killer_instance_id) -> void:
 				shared_names.append(sm.server_players[pid].username)
 		if not shared_names.is_empty():
 			net.notify_party_xp_shared.rpc_id(killer_peer_id, shared_names, xp_reward / 2)
-	# Item drop only goes to killer
+	var killer_sp = sm.server_players.get(killer_peer_id, null)
+	if killer_sp:
+		if gold_reward > 0:
+			killer_sp.grant_gold(gold_reward)
+		if item_drop != "":
+			killer_sp.grant_item(item_drop, 1)
+		if killer_sp.active_mission != "" and killer_sp.mission_data.get("type") == "kill":
+			if killer_sp.mission_data.get("enemy_name", "") == enemy_name:
+				var required = killer_sp.mission_data.get("required", 1)
+				if killer_sp.mission_progress < required:
+					killer_sp.mission_progress += 1
+					var net_m = get_tree().root.get_node_or_null("Network")
+					if net_m:
+						net_m.mission_progress_update.rpc_id(killer_peer_id, killer_sp.mission_progress, required)
 	net.notify_enemy_killed.rpc_id(killer_peer_id, xp_reward, gold_reward, item_drop)
 
 func _roll_item_drop() -> String:

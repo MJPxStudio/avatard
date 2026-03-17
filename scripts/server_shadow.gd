@@ -36,8 +36,7 @@ func _physics_process(delta: float) -> void:
 		if sm:
 			var sp = sm.server_players.get(caster_id, null)
 			if sp:
-				sp.current_chakra = max(0, sp.current_chakra - int(CHAKRA_DRAIN))
-				if sp.current_chakra <= 0:
+				if not sp.spend_chakra(int(CHAKRA_DRAIN)):
 					_despawn("no_chakra")
 					return
 
@@ -91,12 +90,11 @@ func _apply_root() -> void:
 		if not result.is_empty():
 			var t = result["node"]
 			if result["type"] == "player":
-				t.apply_root(BIG)
+				t.apply_rooted_visual(BIG)
 			elif t.has_method("apply_root"):
 				t.apply_root(BIG)
-		var caster_sp = sm.server_players.get(caster_id, null)
-		if caster_sp:
-			caster_sp.apply_root(BIG)
+		# NOTE: caster is NOT rooted — they must stay still visually (client handles
+		# this via shadow_spawn state) but need to be able to use follow-up abilities.
 	var net = get_tree().root.get_node_or_null("Network")
 	if net:
 		net.shadow_despawn.rpc(shadow_id, true)  # freeze visual
@@ -118,14 +116,18 @@ func _despawn(reason: String = "") -> void:
 		if not result.is_empty():
 			var t = result["node"]
 			if result["type"] == "player" and t.is_rooted:
-				t.is_rooted  = false
-				t.root_timer = 0.0
+				t.is_rooted      = false
+				t.root_timer     = 0.0
+				t.dot_ticks_left = 0
 				var net0b = get_tree().root.get_node_or_null("Network")
 				if net0b:
 					net0b.notify_status_end.rpc_id(t.peer_id, t.peer_id, "root")
 			elif t.has_method("apply_root"):  # enemy
-				t.is_rooted  = false
+				t.is_rooted   = false
 				t._root_timer = 0.0
+				# Clear DoT on enemy too
+				if "_dot_ticks_left" in t:
+					t._dot_ticks_left = 0
 		sm._shadow_nodes.erase(shadow_id)
 	var net = get_tree().root.get_node_or_null("Network")
 	if net:

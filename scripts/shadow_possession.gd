@@ -22,6 +22,7 @@ func _init() -> void:
 	ability_name    = "Shadow Possession"
 	description     = "Send your shadow to chase and bind an enemy. Hold drains chakra."
 	cooldown        = 7.0
+	cast_time    = 0.7
 	chakra_cost     = 15    # initial cost to cast
 	activation      = "instant"
 	icon_color      = Color("4a3060")

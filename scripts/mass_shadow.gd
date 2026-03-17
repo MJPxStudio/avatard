@@ -13,6 +13,7 @@ func _init() -> void:
 	ability_name    = "Mass Shadow Possession"
 	description     = "Spread your shadow wide, binding all nearby enemies."
 	cooldown        = 18.0
+	cast_time    = 0.8
 	chakra_cost     = 60
 	activation      = "instant"
 	icon_color      = Color("3a2080")

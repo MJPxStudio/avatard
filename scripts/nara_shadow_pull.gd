@@ -9,6 +9,7 @@ extends AbilityBase
 
 const RANGE:       float = 256.0   # 16 tiles
 const PULL_DIST:   float = 48.0    # how close they end up
+const MIN_RANGE:   float = 64.0    # 4 tiles — too close to pull
 
 func _init() -> void:
 	ability_name    = "Shadow Pull"
@@ -32,12 +33,22 @@ func activate(player: Node) -> bool:
 	if player.global_position.distance_to(target.global_position) > RANGE:
 		if player.chat: player.chat.add_system_message("Target out of range.")
 		return false
+	if player.global_position.distance_to(target.global_position) < MIN_RANGE:
+		if player.chat: player.chat.add_system_message("Target is too close to pull.")
+		return false
+	# Require active Shadow Possession
+	var has_possession = false
+	if player.hotbar != null:
+		for slot in player.hotbar.slots:
+			if slot != null and slot.has_method("is_active") and slot.is_active():
+				has_possession = true
+				break
+	if not has_possession:
+		if player.chat: player.chat.add_system_message("Requires active Shadow Possession.")
+		return false
 
-	player.current_chakra -= chakra_cost
+	# Server handles chakra cost via spend_chakra
 	current_cooldown = cooldown
-	player._update_hud()
-	_spawn_visual(player, target.global_position)
-
 	var net = player.get_node_or_null("/root/Network")
 	if net and net.is_network_connected():
 		net.send_ability.rpc_id(1, "shadow_pull", {

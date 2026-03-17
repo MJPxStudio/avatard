@@ -38,7 +38,7 @@ const _CLANS: Dictionary = {
 			"show_hp_at_range": true,  # enemy HP bars visible without being in melee range
 			"minimap_reveal":   true,  # enemies show on minimap at all times
 		},
-		"ability_pool":  ["gentle_fist", "palm_thrust", "rotation", "64_palms", "128_palms"],
+		"ability_pool":  ["gentle_fist", "byakugan", "rotation", "64_palms", "air_palm"],
 		"element_affinity": null,   # player picks freely
 		"color":         Color("c8e6fa"),
 	},

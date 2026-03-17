@@ -146,6 +146,10 @@ func _update_state() -> void:
 func _process_aggro(delta: float) -> void:
 	if target == null:
 		return
+	if target.is_immune or target.is_spinning:
+		target = null
+		state  = "return"
+		return
 	if hp <= max_hp * 0.20:
 		_attack_phase = AttackPhase.NONE
 		_fleeing      = true
@@ -161,7 +165,6 @@ func _process_aggro(delta: float) -> void:
 		_strafe_dir   = 1.0 if randf() > 0.5 else -1.0
 
 	if dist > CIRCLE_RADIUS:
-		# Direct approach at long range, blend into flank angle only near orbit
 		var base_approach = to_target.normalized()
 		var flanked       = base_approach.rotated(_flank_angle)
 		var blend         = clampf(1.0 - (dist - CIRCLE_RADIUS) / 200.0, 0.0, 1.0)
@@ -179,7 +182,6 @@ func _process_aggro(delta: float) -> void:
 				attack_timer = attack_cooldown
 				_begin_attack(to_target.normalized())
 		else:
-			# Orbit full — hold position at CIRCLE_RADIUS + 40px, strafe slowly
 			var approach  = to_target.normalized()
 			var hold_dist = CIRCLE_RADIUS + 40.0
 			if dist < hold_dist:
@@ -304,3 +306,7 @@ func _do_lunge_hit() -> void:
 				if sm.server_players[pid] == target:
 					net.confirm_hit.rpc_id(pid, global_position, attack_damage)
 					break
+
+func _roll_item_drop() -> String:
+	# 60% fang, 40% pelt
+	return "wolf_fang" if randf() < 0.6 else "wolf_pelt"

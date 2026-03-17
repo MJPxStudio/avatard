@@ -96,6 +96,34 @@ const _ITEMS: Dictionary = {
 
 	# ── Shoes ─────────────────────────────────────────────────────────────────
 	# ── Accessories ───────────────────────────────────────────────────────────
+	# ── Crafting Materials / Mission Items ────────────────────────────────────
+	"wolf_fang": {
+		"id":           "wolf_fang",
+		"name":         "Wolf Fang",
+		"stackable":    true,
+		"quantity":     1,
+		"icon_path":    "res://sprites/icons/wolf_fang.png",
+		"icon_offset":  Vector2(0, 0),
+		"use_effect":   {},
+	},
+	"wolf_pelt": {
+		"id":           "wolf_pelt",
+		"name":         "Wolf Pelt",
+		"stackable":    true,
+		"quantity":     1,
+		"icon_path":    "res://sprites/icons/wolf_pelt.png",
+		"icon_offset":  Vector2(0, 0),
+		"use_effect":   {},
+	},
+	"mission_letter": {
+		"id":           "mission_letter",
+		"name":         "Mission Letter",
+		"stackable":    false,
+		"quantity":     1,
+		"icon_path":    "res://sprites/icons/letter.png",
+		"icon_offset":  Vector2(0, 0),
+		"use_effect":   {},
+	},
 	# ── Consumables (no equip_slot) ───────────────────────────────────────────
 	# use_effect keys:
 	#   type: "heal_hp" | "cure_poison" (more added later)
@@ -130,12 +158,11 @@ const _ITEMS: Dictionary = {
 		"use_effect": {"type": "unlock_ability", "ability_id": "gentle_fist"},
 		"min_rank": "Academy Student",
 	},
-	"scroll_palm_thrust": {
-		"id": "scroll_palm_thrust", "name": "Palm Thrust Scroll",
+	"scroll_byakugan": {
+		"id": "scroll_byakugan", "name": "Byakugan Scroll",
 		"stackable": false, "quantity": 1,
-		"icon_path": "res://sprites/player/Items/scroll_taijutsu.png",
-		"use_effect": {"type": "unlock_ability", "ability_id": "palm_thrust"},
-		"min_rank": "Academy Student",
+		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
+		"use_effect": {"type": "unlock_ability", "ability_id": "byakugan"},
 	},
 	"scroll_rotation": {
 		"id": "scroll_rotation", "name": "Rotation Scroll",
@@ -151,12 +178,11 @@ const _ITEMS: Dictionary = {
 		"use_effect": {"type": "unlock_ability", "ability_id": "64_palms"},
 		"min_rank": "Chunin",
 	},
-	"scroll_128_palms": {
-		"id": "scroll_128_palms", "name": "128 Palms Scroll",
+	"scroll_air_palm": {
+		"id": "scroll_air_palm", "name": "Air Palm Scroll",
 		"stackable": false, "quantity": 1,
 		"icon_path": "res://sprites/player/Items/scroll_ninjutsu.png",
-		"use_effect": {"type": "unlock_ability", "ability_id": "128_palms"},
-		"min_rank": "Jonin",
+		"use_effect": {"type": "unlock_ability", "ability_id": "air_palm"},
 	},
 
 	# ── Ability Scrolls (Nara) ────────────────────────────────────────────────

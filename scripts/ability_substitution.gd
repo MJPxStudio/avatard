@@ -12,6 +12,7 @@ func _init() -> void:
 	ability_name = "Substitution"
 	description  = "Negate the next hit and teleport near your attacker."
 	cooldown     = 15.0
+	cast_time    = 0.1
 	chakra_cost  = 30
 	activation   = "targeted"
 	icon_color   = Color("f39c12")
@@ -24,12 +25,12 @@ func activate(player: Node) -> bool:
 	if player.current_chakra < chakra_cost:
 		print("[ABILITY] Not enough chakra for Substitution")
 		return false
-	player.current_chakra -= chakra_cost
 	is_primed = true
-	player._update_hud()
-	# Visual indicator — player flickers yellow
-	_show_primed_visual(player)
-	print("[ABILITY] Substitution primed — next hit will be negated")
+	current_cooldown = cooldown
+	# Server handles chakra deduction and broadcasts primed visual to all clients
+	var net = player.get_node_or_null("/root/Network")
+	if net and net.is_network_connected():
+		net.send_ability.rpc_id(1, "substitution_prime", {})
 	return true
 
 # Called by player.gd when taking damage while primed
@@ -48,22 +49,8 @@ func try_substitute(player: Node, attacker_position: Vector2) -> bool:
 	player.global_position = new_pos
 	player.grid_pos        = new_pos
 	player.target_pos      = new_pos
-	_show_teleport_visual(player)
-	print("[ABILITY] Substitution triggered — teleported near attacker")
+	# Notify server of teleport so it can broadcast the visual and update position
+	var net = player.get_node_or_null("/root/Network")
+	if net and net.is_network_connected():
+		net.send_ability.rpc_id(1, "substitution_triggered", {"new_pos": new_pos})
 	return true
-
-func _show_primed_visual(player: Node) -> void:
-	var tween = player.get_tree().create_tween().set_loops(6)
-	tween.tween_property(player, "modulate", Color(1.0, 0.9, 0.0, 0.6), 0.15)
-	tween.tween_property(player, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.15)
-
-func _show_teleport_visual(player: Node) -> void:
-	var flash = ColorRect.new()
-	flash.color    = Color(1.0, 0.9, 0.0, 0.8)
-	flash.size     = Vector2(32, 32)
-	flash.position = player.global_position - Vector2(16, 16)
-	flash.z_index  = 10
-	player.get_parent().add_child(flash)
-	var tween = player.get_tree().create_tween()
-	tween.tween_property(flash, "modulate:a", 0.0, 0.25)
-	tween.tween_callback(flash.queue_free)

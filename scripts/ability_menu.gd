@@ -409,13 +409,13 @@ func _save_hotbar_loadout() -> void:
 	for i in range(10):
 		var slot = hotbar_ref.slots[i]
 		if slot is AbilityBase:
-			loadout.append(slot.get_meta("_ability_id") if slot.has_meta("_ability_id") else "" if slot.get_meta("_ability_id") if slot.has_meta("_ability_id") else "" else "")
+			loadout.append(slot.get_meta("_ability_id") if slot.has_meta("_ability_id") else "")
 		else:
 			loadout.append("")
 	# Send to server to persist
 	var net = get_tree().root.get_node_or_null("Network")
 	if net and net.is_network_connected():
-		net.send_hotbar_loadout.rpc_id(1, loadout)
+		net.send_hotbar_loadout(loadout)
 
 func restore_loadout(loadout: Array) -> void:
 	if hotbar_ref == null:

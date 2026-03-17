@@ -9,8 +9,7 @@ const ParticleBurst = preload("res://scripts/particle_burst.gd")
 # ============================================================
 
 @export var tile_size:      int   = 16
-@export var walk_step_rate: float = 0.14
-@export var run_step_rate:  float = 0.08
+@export var step_rate: float = 0.08
 
 @export var attack_damage:    int   = 15
 @export var attack_range:     float = 40.0
@@ -18,13 +17,18 @@ const ParticleBurst = preload("res://scripts/particle_burst.gd")
 @export var attack_cooldown:  float = 0.4
 @export var attack_knockback: float = 120.0
 
-var is_running:   bool   = false
+const DASH_CHARGES_MAX: int    = 2      # max dash charges
+const DASH_CHARGE_TIME: float  = 7.0    # seconds to reload one charge
+const DASH_STEPS:       int    = 6      # tiles to cover per dash
+var dash_charges:       int    = 2      # current available charges
+var _dash_charge_timer: float  = 0.0          # shared reload timer — one charge reloads at a time
+var _dash_steps_left:   int    = 0
 var is_dead:      bool   = false
 var invuln_ticks: float  = 0.0
 var facing_dir:   String = "down"
 
 # ── Cosmetics ─────────────────────────────────────────────────────────────────
-var hair_style: String = "Hair1"             # subfolder under Hairs/
+var hair_style: String = ""                  # subfolder under Hairs/ — empty = no hair
 var hair_color: Color  = Color("e8c49a")     # default blonde-ish
 var _hair_sprite: Sprite2D = null
 
@@ -61,6 +65,7 @@ var hitstop_timer:  float = 0.0  # freezes movement briefly on hit
 # Targeting
 var locked_target:    Node2D = null
 var locked_target_id: String = ""
+var byakugan_active:  bool   = false
 
 # Debug
 var _debug_attack_vis: Polygon2D = null
@@ -70,8 +75,8 @@ var _attack_flash:     float     = 0.0  # timer — briefly brighten vis on swin
 # Stats
 var max_hp:         int = 100
 var current_hp:     int = 100
-var max_chakra:     int = 100
-var current_chakra: int = 100
+var max_chakra:     int = 500  # DEBUG
+var current_chakra: int = 500  # DEBUG
 var level:          int = 1
 var current_exp:    int = 0
 var max_exp:        int = 100
@@ -83,6 +88,7 @@ var respawn_screen  = null  # set by main.gd; shown on death, freed on respawn
 var dialogue_open:  bool = false  # true while dialogue box is open — blocks movement/attacks
 var _charging:        bool  = false
 var _charge_rate:     float = 12.0    # chakra per second while charging
+var _spin_tween:      Tween = null    # rotation ability spinning tween
 var _charge_accum:    float = 0.0     # fractional chakra accumulator (current_chakra is int)
 var _charge_particles: CPUParticles2D = null  # persistent swirl node
 var settings_open:  bool = false
@@ -119,8 +125,31 @@ var clan:               String = ""
 var element:            String = ""
 var element2:           String = ""
 var unlocked_abilities: Array  = []   # ability ids earned from scrolls
+
+# ── Dungeon boon properties — set by server, read by client ability scripts ──
+var boon_chakra_cost_mult:       float = 1.0
+var boon_clay_dmg_mult:          float = 1.0
+var boon_c1_damage_flat:         int   = 0
+var boon_c1_speed_mult:          float = 1.0
+var boon_c1_range_mult:          float = 1.0
+var boon_c1_cooldown_flat:       float = 0.0
+var boon_c1_spider_count:        int   = 1
+var boon_c2_cooldown_flat:       float = 0.0
+var boon_c2_orbit_duration_flat: float = 0.0
+var boon_c2_drop_interval_mult:  float = 1.0
+var boon_c2_explosion_mult:      float = 1.0
+var boon_c2_owl_count:           int   = 1
+var boon_c3_cooldown_flat:       float = 0.0
+var boon_c3_radius_mult:         float = 1.0
+var boon_c4_count_flat:          int   = 0
+var boon_c4_dmg_mult:            float = 1.0
+var boon_c4_radius_mult:         float = 1.0
+var dungeon_passives:            Array = []
 var is_poison_immune:   bool   = false
 var is_rooted:          bool   = false
+var is_escort_locked:   bool   = false
+var training_grounds:   Node   = null
+var is_spinning:        bool   = false  # palm rotation — locks movement + abilities
 var quest_hud:     Node = null
 
 var dodge_chance: float = 0.0
@@ -171,6 +200,8 @@ func connect_network_signals() -> void:
 	if gs and not gs.damage_received.is_connected(_on_server_damage):
 		gs.damage_received.connect(_on_server_damage)
 	var net = get_tree().root.get_node_or_null("Network")
+	if net and not net.ability_failed.is_connected(_on_ability_failed):
+		net.ability_failed.connect(_on_ability_failed)
 	if net and not net.hit_confirmed.is_connected(_on_hit_confirmed):
 		net.hit_confirmed.connect(_on_hit_confirmed)
 	if not net.ability_hit_confirmed.is_connected(_on_ability_hit_confirmed):
@@ -194,6 +225,15 @@ func connect_network_signals() -> void:
 		net.status_applied.connect(_on_status_applied)
 		net.status_ended.connect(_on_status_ended)
 		net.pull_received.connect(_on_pull_received)
+		net.chakra_synced.connect(_on_chakra_synced)
+	if net and not net.dungeon_rest_received.is_connected(_on_dungeon_rest):
+		net.dungeon_rest_received.connect(_on_dungeon_rest)
+	if net and not net.dungeon_stat_sync_received.is_connected(_on_dungeon_stat_sync):
+		net.dungeon_stat_sync_received.connect(_on_dungeon_stat_sync)
+	if net and not net.dungeon_boon_props_received.is_connected(_on_dungeon_boon_props):
+		net.dungeon_boon_props_received.connect(_on_dungeon_boon_props)
+	if net and net.notify_quest_accepted_received.is_connected(accept_quest_locally) == false:
+		net.notify_quest_accepted_received.connect(accept_quest_locally)
 
 func _on_server_damage(amount: int, knockback_dir: Vector2) -> void:
 	# amount=0 is the server's respawn signal after death timer
@@ -213,6 +253,24 @@ func _on_server_damage(amount: int, knockback_dir: Vector2) -> void:
 	invuln_ticks = 0.0
 	call_deferred("_sync_max_hp_to_server")
 	take_damage(amount, knockback_dir, 120.0)
+	# Screen shake on incoming damage — scaled by amount
+	var cam = get_node_or_null("Camera2D")
+	if cam and cam.has_method("shake"):
+		var shake_str = clamp(amount / 20.0, 2.0, 8.0)
+		cam.shake(0.18, shake_str)
+	# Red tint flash on self
+	var tween = get_tree().create_tween()
+	tween.tween_property(self, "modulate", Color(1.4, 0.3, 0.3, 1.0), 0.05)
+	tween.tween_property(self, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+
+func _on_ability_failed(ability_name: String, reason: String) -> void:
+	print("[ABILITY FAILED] %s: %s" % [ability_name, reason])
+	if chat:
+		chat.add_system_message("[Ability] %s" % reason)
+	# Also cancel any active cast bar so it doesn't hang
+	var main = get_tree().root.get_node_or_null("Main")
+	if main and main.get("_cast_bar"):
+		main._cast_bar.cancel()
 
 func _on_ability_hit_confirmed(hit_pos: Vector2, _amount: int) -> void:
 	# Ability hit — particles only, no recoil, no hitstop
@@ -225,7 +283,8 @@ func _on_hit_confirmed(hit_pos: Vector2, amount: int) -> void:
 	hitstop_timer = 0.033
 	var cam = get_node_or_null("Camera2D")
 	if cam and cam.has_method("shake"):
-		cam.shake(0.10, 4.0)
+		var str = clamp(amount / 15.0, 2.0, 7.0) if amount > 0 else 4.0
+		cam.shake(0.10, str)
 	# Bounce back — only recoil on melee swing, never on ability/remote hits
 	if not is_attacking:
 		return
@@ -293,10 +352,11 @@ func _build_animations() -> void:
 	for dir in dirs:
 		var anim_name = "attack_" + dir
 		sf.add_animation(anim_name)
-		sf.set_animation_speed(anim_name, 12.0)
+		sf.set_animation_speed(anim_name, 14.0)
 		sf.set_animation_loop(anim_name, false)
-		var tex := load("res://sprites/player/attack_%s_0.png" % dir) as Texture2D
-		if tex: sf.add_frame(anim_name, tex)
+		for f in range(3):
+			var tex := load("res://sprites/player/attack_%s_%d.png" % [dir, f]) as Texture2D
+			if tex: sf.add_frame(anim_name, tex)
 	sf.add_animation("seals")
 	sf.set_animation_speed("seals", 10.0)
 	sf.set_animation_loop("seals", false)
@@ -314,19 +374,26 @@ func _load_layer_textures(base_path: String) -> Dictionary:
 	var textures := {}
 	var dirs := ["down", "up", "right", "left"]
 	for dir in dirs:
+		# Walk frames 0-3
 		for fr in range(4):
-			var tex := load(base_path + "walk_%s%d.png" % [dir, fr]) as Texture2D
-			if not tex:
-				tex = load(base_path + "walk_%s_%d.png" % [dir, fr]) as Texture2D
+			var tex := load(base_path + "walk_%s_%d.png" % [dir, fr]) as Texture2D
 			if tex: textures["walk_%s_%d" % [dir, fr]] = tex
-		var idle_tex := load(base_path + "idle_%s.png" % dir) as Texture2D
+		# Idle — single frame
+		var idle_tex := load(base_path + "idle_%s_0.png" % dir) as Texture2D
 		if not idle_tex:
-			idle_tex = load(base_path + "idle_%s_0.png" % dir) as Texture2D
+			idle_tex = load(base_path + "idle_%s.png" % dir) as Texture2D
 		if idle_tex:
-			textures["idle_" + dir]   = idle_tex
+			textures["idle_" + dir] = idle_tex
+		# Attack frames 0-2
+		var has_attack := false
+		for fr in range(3):
+			var tex := load(base_path + "attack_%s_%d.png" % [dir, fr]) as Texture2D
+			if tex:
+				textures["attack_%s_%d" % [dir, fr]] = tex
+				has_attack = true
+		# Fallback attack to idle if no attack frames exist
+		if not has_attack and idle_tex:
 			textures["attack_" + dir] = idle_tex
-		var atk_tex := load(base_path + "attack_%s.png" % dir) as Texture2D
-		if atk_tex: textures["attack_" + dir] = atk_tex
 	return textures
 
 func _process(_delta: float) -> void:
@@ -339,7 +406,8 @@ func _process(_delta: float) -> void:
 	elif anim.begins_with("idle_"):
 		key = anim
 	elif anim.begins_with("attack_"):
-		key = "attack_" + anim.substr(7)
+		var attack_dir = anim.substr(7)  # e.g. "down"
+		key = "attack_%s_%d" % [attack_dir, fr]
 	else:
 		key = "idle_down"
 	# Fall back to idle facing direction if a walk/attack frame is missing.
@@ -360,6 +428,8 @@ func _cosm_play(_anim: String) -> void:
 	pass  # unused — _process handles sync
 
 func _build_hair_sprite() -> void:
+	if hair_style == "":
+		return  # no hair selected — skip building sprite
 	_hair_sprite          = Sprite2D.new()
 	_hair_sprite.name     = "HairSprite"
 	_hair_sprite.z_index  = 5   # above chest/shirt layers
@@ -476,6 +546,34 @@ func clear_equip_layer(slot: String) -> void:
 	spr.visible  = false
 	spr.set_meta("textures", {})
 
+func flash_visual(visual_id: String) -> void:
+	var spr = $AnimatedSprite2D
+	if visual_id == "strangle":
+		var tween = get_tree().create_tween().set_loops(4)
+		tween.tween_property(spr, "modulate", Color(0.6, 0.0, 1.0, 1.0), 0.15)
+		tween.tween_property(spr, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.15)
+	elif visual_id == "gentle_fist" or visual_id == "palms_burst":
+		var tween = get_tree().create_tween().set_loops(2)
+		tween.tween_property(spr, "modulate", Color(0.6, 0.92, 1.0, 1.0), 0.08)
+		tween.tween_property(spr, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+	elif visual_id == "air_palm":
+		var tween = get_tree().create_tween()
+		tween.tween_property(spr, "modulate", Color(0.5, 0.88, 1.0, 1.0), 0.07)
+		tween.tween_property(spr, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.2)
+	elif visual_id == "rotation_start":
+		is_spinning = true
+		if _spin_tween:
+			_spin_tween.kill()
+		_spin_tween = get_tree().create_tween().set_loops(-1)
+		_spin_tween.tween_property(spr, "modulate", Color(0.4, 0.8, 1.0, 1.0), 0.12)
+		_spin_tween.tween_property(spr, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+	elif visual_id == "rotation_end":
+		is_spinning = false
+		if _spin_tween:
+			_spin_tween.kill()
+			_spin_tween = null
+		spr.modulate = Color(1.0, 1.0, 1.0, 1.0)
+
 func _physics_process(delta: float) -> void:
 	if is_dead:
 		velocity = Vector2.ZERO
@@ -519,6 +617,18 @@ func _physics_process(delta: float) -> void:
 
 	if attack_timer > 0:
 		attack_timer -= delta
+	# Tick shared dash charge reload
+	if _dash_charge_timer > 0.0:
+		_dash_charge_timer -= delta
+		if _dash_charge_timer <= 0.0:
+			_dash_charge_timer = 0.0
+			if dash_charges < DASH_CHARGES_MAX:
+				dash_charges += 1
+				# If still not full, immediately start reloading the next charge
+				if dash_charges < DASH_CHARGES_MAX:
+					_dash_charge_timer = DASH_CHARGE_TIME
+				if hud and hud.has_method("update_dash_charges"):
+					hud.update_dash_charges(dash_charges, _dash_charge_timer)
 	# Chakra charge — hold C
 	if _charging:
 		if current_chakra < max_chakra:
@@ -544,11 +654,14 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("target_lock"):
 			_cycle_target()
 
-		if Input.is_action_just_pressed("attack") and attack_timer <= 0 and not is_attacking:
+		if Input.is_action_just_pressed("attack") and attack_timer <= 0 and not is_attacking and not is_rooted:
 			_do_attack()
 
-		if Input.is_action_just_pressed("run"):
-			is_running = !is_running
+		# Dash — Space (or dedicated bind) while moving
+		if Input.is_action_just_pressed("dash") and dash_charges > 0 \
+				and not is_rooted and not is_spinning and not is_escort_locked \
+				and not is_dead:
+			_start_dash()
 		# Chakra charge — hold C
 		if Input.is_key_pressed(KEY_C):
 			if not _charging and current_chakra < max_chakra:
@@ -595,18 +708,19 @@ func _physics_process(delta: float) -> void:
 		var drop = false
 		if "is_dead" in locked_target and locked_target.is_dead:
 			drop = true
-		if global_position.distance_to(locked_target.global_position) > 480.0:  # 30 tiles
+		var drop_range = 640.0 if byakugan_active else 480.0
+		if global_position.distance_to(locked_target.global_position) > drop_range:
 			drop = true
 		if drop:
 			_set_target(null)
 
 	var raw_input = _get_input()
-	if is_rooted:
-		raw_input = Vector2.ZERO   # can't move while shadow-bound
+	if is_rooted or is_spinning or is_escort_locked:
+		raw_input = Vector2.ZERO   # can't move while rooted, spinning, or cast-locked
 	if raw_input != Vector2.ZERO and not is_attacking:
 		_update_facing(raw_input)
 
-	var current_step_rate = run_step_rate if is_running else walk_step_rate
+	var current_step_rate = step_rate
 
 	if is_stepping:
 		var to_target  = target_pos - global_position
@@ -618,7 +732,7 @@ func _physics_process(delta: float) -> void:
 			last_safe_pos   = grid_pos
 			is_stepping     = false
 			velocity        = Vector2.ZERO
-			if not is_attacking and not is_rooted:
+			if not is_attacking and not is_rooted and not is_spinning and not is_escort_locked:
 				var input = _get_input()
 				if input != Vector2.ZERO:
 					_try_step(input, current_step_rate)
@@ -631,7 +745,7 @@ func _physics_process(delta: float) -> void:
 	else:
 		step_timer -= delta
 		if step_timer <= 0 and not is_attacking:
-			if is_rooted:
+			if is_rooted or is_spinning or is_escort_locked:
 				velocity = Vector2.ZERO
 				_play_idle()
 			else:
@@ -685,6 +799,65 @@ func _update_facing(input: Vector2) -> void:
 		if not is_stepping:
 			_play_idle()
 
+func _start_dash() -> void:
+	var input = _get_input()
+	if input == Vector2.ZERO:
+		match facing_dir:
+			"up":    input = Vector2.UP
+			"down":  input = Vector2.DOWN
+			"left":  input = Vector2.LEFT
+			"right": input = Vector2.RIGHT
+	dash_charges -= 1
+	# Start shared reload timer if not already running
+	if _dash_charge_timer <= 0.0:
+		_dash_charge_timer = DASH_CHARGE_TIME
+	if hud and hud.has_method("update_dash_charges"):
+		hud.update_dash_charges(dash_charges, _dash_charge_timer)
+	# Notify training grounds
+	if training_grounds and is_instance_valid(training_grounds) and training_grounds.has_method("notify_dash"):
+		training_grounds.notify_dash()
+	# Calculate destination — 4 tiles in dash direction, stop if blocked
+	var dir = Vector2(sign(input.x), sign(input.y))
+	var dest = grid_pos
+	for i in range(DASH_STEPS):
+		var next = dest + dir * tile_size
+		# Check for walls
+		var space = get_world_2d().direct_space_state
+		var query = PhysicsShapeQueryParameters2D.new()
+		query.shape        = $CollisionShape2D.shape
+		query.transform    = Transform2D(0, next)
+		query.exclude      = [self]
+		query.collision_mask = collision_mask
+		var hits = space.intersect_shape(query)
+		var blocked = false
+		for h in hits:
+			if not h.collider.is_in_group("player"):
+				blocked = true
+				break
+		if blocked:
+			break
+		dest = next
+	if dest == grid_pos:
+		return  # nowhere to go
+	# Snap grid tracking immediately
+	grid_pos   = dest
+	target_pos = dest
+	last_safe_pos = dest
+	is_stepping = false
+	# Send new position to server
+	var net = get_node_or_null("/root/Network")
+	if net and net.is_network_connected():
+		net.send_position.rpc_id(1, dest)
+	# Tween visually to destination
+	var dash_tween = get_tree().create_tween()
+	dash_tween.tween_property(self, "global_position", dest, 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# Flash flicker alongside movement
+	var flicker = get_tree().create_tween()
+	flicker.tween_property(self, "modulate:a", 0.2, 0.06)
+	flicker.tween_property(self, "modulate:a", 1.0, 0.06)
+	flicker.tween_property(self, "modulate:a", 0.2, 0.06)
+	flicker.tween_property(self, "modulate:a", 1.0, 0.06)
+
 func _try_step(input: Vector2, step_rate: float) -> void:
 	_update_facing(input)
 	var next_pos = grid_pos + Vector2(
@@ -701,7 +874,7 @@ func _try_step(input: Vector2, step_rate: float) -> void:
 	var results = space.intersect_shape(query)
 	var blocked = false
 	for r in results:
-		if not r.collider.is_in_group("enemy"):
+		if not r.collider.is_in_group("player"):
 			blocked = true
 			break
 	if not blocked:
@@ -768,46 +941,28 @@ func get_attack_direction() -> Vector2:
 func _do_attack() -> void:
 	is_attacking = true
 	attack_timer = attack_cooldown
-	_attack_flash = 0.12  # briefly brighten the debug vis on swing
+	# Notify training grounds for melee objective
+	if training_grounds and is_instance_valid(training_grounds) and training_grounds.has_method("notify_melee_hit"):
+		training_grounds.notify_melee_hit()
+	_attack_flash = 0.12
 	var dir_vec = get_attack_direction()
 	_update_facing(dir_vec)
 	$AnimatedSprite2D.play("attack_" + facing_dir)
 	_cosm_play("attack_" + facing_dir)
-	# Lunge — slide forward, stop just short of any enemy in the way
-	var lunge_dest = global_position + dir_vec * 50.0
-	var space      = get_world_2d().direct_space_state
-	var shape      = $CollisionShape2D.shape
-	var query      = PhysicsShapeQueryParameters2D.new()
-	query.shape          = shape
-	query.exclude        = [self]
-	query.collision_mask = collision_mask
-	# Walk toward lunge destination in steps, stop when an enemy blocks
-	var lunge_pos = global_position
-	var step      = dir_vec * float(tile_size)
-	var steps     = int(50.0 / float(tile_size)) + 1
-	for i in range(steps):
-		var candidate = _snap_to_grid(global_position + dir_vec * float(tile_size) * float(i + 1))
-		if candidate.distance_to(global_position) > 50.0:
-			break
-		query.transform = Transform2D(0, candidate)
-		var hits = space.intersect_shape(query)
-		var hit_enemy = hits.any(func(r): return r.collider.is_in_group("enemy"))
-		var hit_wall  = hits.any(func(r): return not r.collider.is_in_group("enemy"))
-		if hit_wall:
-			break  # wall — stop here
-		if hit_enemy:
-			break  # enemy in the way — stop just before it
-		lunge_pos = candidate
-	target_pos  = lunge_pos
-	is_stepping = true
-	step_timer  = attack_cooldown * 0.5
+	# Lunge disabled — attack hits in front without movement
+	#const LUNGE_DIST: float = 24.0
+	#const LUNGE_TIME: float = 0.07
+	#var lunge_dest = global_position + dir_vec * LUNGE_DIST
+	#var lunge_tween = get_tree().create_tween()
+	#lunge_tween.tween_property(self, "global_position", lunge_dest, LUNGE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	#lunge_tween.tween_property(self, "global_position", global_position, LUNGE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	# Fire hitbox on frame 2 (the strike frame) — ~2 frames at 14fps
 	var net = get_node_or_null("/root/Network")
-	if net != null and net.is_network_connected():
-		# Send actual visual position at time of attack — server uses this for hit check
-		net.send_attack.rpc_id(1, dir_vec, global_position)
-		# Also sync lunge destination so server position stays in step with client
-		if lunge_pos != global_position:
-			net.send_position.rpc_id(1, lunge_pos)
+	get_tree().create_timer(1.0 / 14.0).timeout.connect(func():
+		if net != null and net.is_network_connected():
+			net.send_attack.rpc_id(1, dir_vec, global_position)
+			net.send_position.rpc_id(1, global_position)
+	, CONNECT_ONE_SHOT)
 
 func _facing_vec() -> Vector2:
 	match facing_dir:
@@ -820,6 +975,9 @@ func _facing_vec() -> Vector2:
 func _on_animation_finished() -> void:
 	if $AnimatedSprite2D.animation.begins_with("attack_"):
 		is_attacking = false
+		is_stepping  = false
+		grid_pos     = _snap_to_grid(global_position)
+		target_pos   = grid_pos
 		_play_idle()
 
 func _sync_max_hp_to_server() -> void:
@@ -836,6 +994,7 @@ func apply_stats(stats: Dictionary) -> void:
 	# stat_points intentionally NOT reset here — caller is responsible for setting it
 	max_hp        = 100 + stat_hp * 10 + (level - 1) * 10
 	max_chakra    = 100 + stat_chakra * 3
+	max_chakra    = maxi(max_chakra, 500)  # DEBUG
 	dodge_chance  = stat_dex * 0.002
 	cd_reduction  = stat_dex * 0.001
 	# -1 means "not yet set" (new character) — spawn at full
@@ -892,6 +1051,9 @@ func _on_quest_turned_in(quest_id: String, reward_xp: int, reward_gold: int) -> 
 
 func _start_charge() -> void:
 	_charging = true
+	var net = get_node_or_null("/root/Network")
+	if net and net.is_network_connected():
+		net.send_ability.rpc_id(1, "charging_start", {})
 	if _charge_particles == null:
 		_charge_particles = CPUParticles2D.new()
 		_charge_particles.z_index            = 8
@@ -924,6 +1086,9 @@ func _start_charge() -> void:
 func _stop_charge() -> void:
 	_charging    = false
 	_charge_accum = 0.0
+	var net = get_node_or_null("/root/Network")
+	if net and net.is_network_connected():
+		net.send_ability.rpc_id(1, "charging_stop", {})
 	if _charge_particles:
 		_charge_particles.emitting = false
 
@@ -990,13 +1155,88 @@ func _on_status_applied(status_id: String, _duration: float) -> void:
 	match status_id:
 		"root":
 			is_rooted = true
+			# Cancel any active cast
+			var cb = get_tree().root.get_node_or_null("Main")
+			if cb and cb.get("_cast_bar"):
+				cb._cast_bar.cancel()
 		"dot":
 			pass
+		"strangle_fail":
+			if chat:
+				chat.add_system_message("Target must be caught by your shadow first.")
 
 func _on_status_ended(status_id: String) -> void:
 	match status_id:
 		"root":
 			is_rooted = false
+
+func _on_chakra_synced(current: int, maximum: int) -> void:
+	current_chakra = current
+	max_chakra     = maximum
+	_update_hud()
+
+func _on_dungeon_rest(hp: int, mhp: int, chakra: int, mchakra: int) -> void:
+	max_hp         = mhp
+	current_hp     = hp
+	max_chakra     = mchakra
+	current_chakra = chakra
+	_update_hud()
+
+func _on_dungeon_stat_sync(new_max_hp: int, new_max_chakra: int) -> void:
+	max_hp         = new_max_hp
+	max_chakra     = new_max_chakra
+	current_hp     = min(current_hp, max_hp)
+	current_chakra = min(current_chakra, max_chakra)
+	_update_hud()
+
+func _on_dungeon_boon_props(props: Dictionary) -> void:
+	var g = props  # shorthand
+	boon_chakra_cost_mult       = g["boon_chakra_cost_mult"]       if g.has("boon_chakra_cost_mult")       and g["boon_chakra_cost_mult"] != null else 1.0
+	boon_clay_dmg_mult          = g["boon_clay_dmg_mult"]          if g.has("boon_clay_dmg_mult")          and g["boon_clay_dmg_mult"] != null else 1.0
+	boon_c1_damage_flat         = g["boon_c1_damage_flat"]         if g.has("boon_c1_damage_flat")         and g["boon_c1_damage_flat"] != null else 0
+	boon_c1_speed_mult          = g["boon_c1_speed_mult"]          if g.has("boon_c1_speed_mult")          and g["boon_c1_speed_mult"] != null else 1.0
+	boon_c1_range_mult          = g["boon_c1_range_mult"]          if g.has("boon_c1_range_mult")          and g["boon_c1_range_mult"] != null else 1.0
+	boon_c1_cooldown_flat       = g["boon_c1_cooldown_flat"]       if g.has("boon_c1_cooldown_flat")       and g["boon_c1_cooldown_flat"] != null else 0.0
+	boon_c1_spider_count        = g["boon_c1_spider_count"]        if g.has("boon_c1_spider_count")        and g["boon_c1_spider_count"] != null else 1
+	boon_c2_cooldown_flat       = g["boon_c2_cooldown_flat"]       if g.has("boon_c2_cooldown_flat")       and g["boon_c2_cooldown_flat"] != null else 0.0
+	boon_c2_orbit_duration_flat = g["boon_c2_orbit_duration_flat"] if g.has("boon_c2_orbit_duration_flat") and g["boon_c2_orbit_duration_flat"] != null else 0.0
+	boon_c2_drop_interval_mult  = g["boon_c2_drop_interval_mult"]  if g.has("boon_c2_drop_interval_mult")  and g["boon_c2_drop_interval_mult"] != null else 1.0
+	boon_c2_explosion_mult      = g["boon_c2_explosion_mult"]      if g.has("boon_c2_explosion_mult")      and g["boon_c2_explosion_mult"] != null else 1.0
+	boon_c2_owl_count           = g["boon_c2_owl_count"]           if g.has("boon_c2_owl_count")           and g["boon_c2_owl_count"] != null else 1
+	boon_c3_cooldown_flat       = g["boon_c3_cooldown_flat"]       if g.has("boon_c3_cooldown_flat")       and g["boon_c3_cooldown_flat"] != null else 0.0
+	boon_c3_radius_mult         = g["boon_c3_radius_mult"]         if g.has("boon_c3_radius_mult")         and g["boon_c3_radius_mult"] != null else 1.0
+	boon_c4_count_flat          = g["boon_c4_count_flat"]          if g.has("boon_c4_count_flat")          and g["boon_c4_count_flat"] != null else 0
+	boon_c4_dmg_mult            = g["boon_c4_dmg_mult"]            if g.has("boon_c4_dmg_mult")            and g["boon_c4_dmg_mult"] != null else 1.0
+	boon_c4_radius_mult         = g["boon_c4_radius_mult"]         if g.has("boon_c4_radius_mult")         and g["boon_c4_radius_mult"] != null else 1.0
+	dungeon_passives            = g["dungeon_passives"].duplicate() if g.has("dungeon_passives")            and g["dungeon_passives"] != null else []
+	# Clamp active cooldowns to new reduced maximum
+	if hotbar:
+		var cd_slots = {
+			"boon_c1_cooldown_flat": ["c1", "spider"],
+			"boon_c2_cooldown_flat": ["c2", "owl"],
+			"boon_c3_cooldown_flat": ["c3", "bomb"],
+		}
+		for slot in hotbar.slots:
+			if slot == null or not slot is AbilityBase:
+				continue
+			var aname = slot.ability_name.to_lower()
+			for key in cd_slots:
+				var hit = false
+				for part in cd_slots[key]:
+					if part in aname:
+						hit = true; break
+				if hit:
+					var bonus: float
+					if   key == "boon_c1_cooldown_flat": bonus = boon_c1_cooldown_flat
+					elif key == "boon_c2_cooldown_flat": bonus = boon_c2_cooldown_flat
+					else:                                bonus = boon_c3_cooldown_flat
+					var new_max: float = max(0.2, slot.cooldown + bonus)
+					if slot.current_cooldown > new_max:
+						slot.current_cooldown = new_max
+					break
+	_update_hud()
+	if hotbar and hotbar.has_method("refresh_all_slots"):
+		hotbar.refresh_all_slots()
 
 func _on_pull_received(new_pos: Vector2) -> void:
 	global_position = new_pos
@@ -1081,6 +1321,14 @@ func _update_rank_label() -> void:
 	lbl.add_theme_color_override("font_color", col)
 
 func _on_enemy_killed(_xp: int, gold: int, item_drop: String) -> void:
+	# Death pause — brief time scale dip for impact
+	Engine.time_scale = 0.05
+	get_tree().create_timer(0.08, true, false, true).timeout.connect(func():
+		Engine.time_scale = 1.0
+		var cam = get_node_or_null("Camera2D")
+		if cam and cam.has_method("shake"):
+			cam.shake(0.12, 3.0)
+	)
 	# Gold / item drop feedback — extend when inventory is built
 	if gold > 0:
 		_spawn_damage_number(global_position + Vector2(0, -30), gold, Color("ffd700"))
@@ -1216,7 +1464,7 @@ func take_damage(amount: int, knockback_dir: Vector2 = Vector2.ZERO, kb_force: f
 		target_pos  = kb_target
 		grid_pos    = _snap_to_grid(global_position)
 		is_stepping = true
-		step_timer  = walk_step_rate * 0.5
+		step_timer  = step_rate * 0.5
 		var net = get_node_or_null("/root/Network")
 		if net and net.is_network_connected():
 			net.send_position.rpc_id(1, kb_target)
@@ -1311,6 +1559,11 @@ func _open_settings() -> void:
 				ui.visible = true
 	)
 
+func set_escort_locked(locked: bool) -> void:
+	is_escort_locked = locked
+	if locked:
+		velocity = Vector2.ZERO
+
 func set_dialogue_open(open: bool) -> void:
 	dialogue_open = open
 	if open:
@@ -1325,17 +1578,28 @@ func _set_target(node: Node2D) -> void:
 		if locked_target.has_method("set_targeted"):
 			locked_target.set_targeted(false)
 	if node == null:
+		var was_set = locked_target_id != ""
 		locked_target    = null
 		locked_target_id = ""
 		if target_hud != null:
 			target_hud.hide_hud()
+		if was_set:
+			var net = get_node_or_null("/root/Network")
+			if net and net.is_network_connected():
+				net.send_target_update.rpc_id(1, "")
 		return
+	var new_id = _node_target_id(node)
+	var changed = (new_id != locked_target_id)
 	locked_target    = node
-	locked_target_id = _node_target_id(node)
+	locked_target_id = new_id
 	if node.has_method("set_targeted"):
 		node.set_targeted(true)
 	if target_hud != null:
 		target_hud.set_target(node)
+	if changed:
+		var net = get_node_or_null("/root/Network")
+		if net and net.is_network_connected():
+			net.send_target_update.rpc_id(1, locked_target_id)
 
 # ------ CHAT BUBBLE -------------------------------------------------------------
 

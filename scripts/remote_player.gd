@@ -7,6 +7,7 @@ signal right_clicked(player_node: Node, screen_pos: Vector2)
 var _is_party_member: bool = false
 var _is_targeted:     bool = false
 var target_position: Vector2 = Vector2.ZERO
+var _kb_freeze_timer:  float   = 0.0
 var facing_dir: String = "down"
 var is_moving: bool = false
 
@@ -17,6 +18,12 @@ var _death_timer:    float = 0.0
 var _death_label:    Label = null
 var _name_label:     Label = null
 var _rank_label:     Label = null
+var _spin_tween:     Tween = null
+var _chakra_bar_bg:  ColorRect = null
+var _chakra_bar_fg:  ColorRect = null
+var _chakra_lbl:     Label     = null
+var _chakra_current: int = 0
+var _chakra_max:     int = 100
 var _chat_bubble:    Node  = null
 var _bubble_tween:   Tween = null
 var _level_label:    Label = null
@@ -123,7 +130,7 @@ func apply_appearance(appearance: Dictionary) -> void:
 	if hair_folder != "" and _hair_sprite != null:
 		var textures := _load_layer_textures(hair_folder)
 		_hair_sprite.set_meta("textures", textures)
-		var idle_key := "idle_" + facing_dir
+		var idle_key := "idle_" + _anim_dir()
 		if textures.has(idle_key):
 			_hair_sprite.texture = textures[idle_key]
 	var hair_color = appearance.get("hair_color", null)
@@ -158,7 +165,7 @@ func apply_equipped(equipped: Dictionary) -> void:
 		mat.shader           = shader
 		mat.set_shader_parameter("tint_color", tint)
 		spr.material         = mat
-		var idle_key := "idle_" + facing_dir
+		var idle_key := "idle_" + _anim_dir()
 		if textures.has(idle_key):
 			spr.texture = textures[idle_key]
 			spr.visible = true
@@ -169,7 +176,7 @@ func _sync_all_layers() -> void:
 	var frame: int    = sprite.frame     if sprite else 0
 	var parts         = anim.split("_")  # e.g. ["walk","down"] or ["idle","down"]
 	var anim_type     = parts[0]         # "walk" or "idle" or "attack"
-	var dir           = facing_dir
+	var dir           = _anim_dir()
 
 	# Hair
 	if _hair_sprite != null:
@@ -233,7 +240,7 @@ func set_username(uname: String) -> void:
 		_name_label.add_theme_constant_override("shadow_offset_x", 1)
 		_name_label.add_theme_constant_override("shadow_offset_y", 1)
 		_name_label.size = Vector2(80, 12)
-		_name_label.position = Vector2(-40, -42)  # centered above sprite
+		_name_label.position = Vector2(-40, -62)  # moved up — clear of sprite head
 		add_child(_name_label)
 		# Level label — small, just below name
 		_level_label = Label.new()
@@ -245,10 +252,44 @@ func set_username(uname: String) -> void:
 		_level_label.add_theme_constant_override("shadow_offset_x", 1)
 		_level_label.add_theme_constant_override("shadow_offset_y", 1)
 		_level_label.size     = Vector2(80, 10)
-		_level_label.position = Vector2(-40, -32)
+		_level_label.position = Vector2(-40, -50)
 		_level_label.visible  = false  # level shown in target HUD only, not nameplate
 		add_child(_level_label)
 	_name_label.text = uname
+	# Chakra bar — hidden by default, only shown when local player has Byakugan active
+	if _chakra_bar_bg == null:
+		const BAR_W = 40.0
+		const BAR_H = 4.0
+		const BAR_Y = -30.0   # sits just above sprite head, clearly below rank label
+		var bg = ColorRect.new()
+		bg.size     = Vector2(BAR_W, BAR_H)
+		bg.position = Vector2(-BAR_W / 2.0, BAR_Y)
+		bg.color    = Color(0.05, 0.1, 0.25, 0.9)
+		bg.z_index  = 9
+		bg.visible  = false
+		add_child(bg)
+		_chakra_bar_bg = bg
+		var fg = ColorRect.new()
+		fg.size     = Vector2(BAR_W, BAR_H)
+		fg.position = Vector2(-BAR_W / 2.0, BAR_Y)
+		fg.color    = Color(0.2, 0.85, 1.0, 0.95)
+		fg.z_index  = 10
+		fg.visible  = false
+		add_child(fg)
+		_chakra_bar_fg = fg
+		var lbl = Label.new()
+		lbl.add_theme_font_size_override("font_size", 6)
+		lbl.add_theme_color_override("font_color", Color(0.6, 1.0, 1.0, 1.0))
+		lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
+		lbl.add_theme_constant_override("shadow_offset_x", 1)
+		lbl.add_theme_constant_override("shadow_offset_y", 1)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.size     = Vector2(BAR_W, 8)
+		lbl.position = Vector2(-BAR_W / 2.0, BAR_Y + BAR_H + 2)
+		lbl.z_index  = 10
+		lbl.visible  = false
+		add_child(lbl)
+		_chakra_lbl = lbl
 	# Rank label — just below the name label
 	if _rank_label == null:
 		_rank_label = Label.new()
@@ -260,8 +301,31 @@ func set_username(uname: String) -> void:
 		_rank_label.add_theme_constant_override("shadow_offset_x", 1)
 		_rank_label.add_theme_constant_override("shadow_offset_y", 1)
 		_rank_label.size     = Vector2(80, 10)
-		_rank_label.position = Vector2(-40, -31)  # just below name label
+		_rank_label.position = Vector2(-40, -51)  # just below name label
 		add_child(_rank_label)
+
+func set_byakugan_visible(on: bool) -> void:
+	if _chakra_bar_bg == null:
+		return
+	_chakra_bar_bg.visible = on
+	_chakra_bar_fg.visible = on
+	if _chakra_lbl:
+		_chakra_lbl.visible = on
+	if on:
+		_refresh_chakra_bar()
+
+func update_chakra_bar(current: int, maximum: int) -> void:
+	_chakra_current = current
+	_chakra_max     = maximum
+	_refresh_chakra_bar()
+
+func _refresh_chakra_bar() -> void:
+	if _chakra_bar_fg == null:
+		return
+	var ratio = float(_chakra_current) / float(max(_chakra_max, 1))
+	_chakra_bar_fg.size.x = 40.0 * ratio
+	if _chakra_lbl:
+		_chakra_lbl.text = "%d/%d" % [_chakra_current, _chakra_max]
 
 func _attach_outline_shader(spr: Node) -> void:
 	var mat    = ShaderMaterial.new()
@@ -289,6 +353,27 @@ void fragment() {
 """
 	mat.shader = shader
 	spr.material = mat
+
+func flash_visual(visual_id: String) -> void:
+	if visual_id == "strangle" and is_instance_valid(sprite):
+		var tween = get_tree().create_tween().set_loops(4)
+		tween.tween_property(sprite, "modulate", Color(0.6, 0.0, 1.0, 1.0), 0.15)
+		tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.15)
+	elif visual_id == "rotation_start" and is_instance_valid(sprite):
+		if _spin_tween:
+			_spin_tween.kill()
+		_spin_tween = get_tree().create_tween().set_loops(-1)
+		_spin_tween.tween_property(sprite, "modulate", Color(0.4, 0.8, 1.0, 1.0), 0.12)
+		_spin_tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.12)
+	elif visual_id == "rotation_end" and is_instance_valid(sprite):
+		if _spin_tween:
+			_spin_tween.kill()
+			_spin_tween = null
+		sprite.modulate = Color(1.0, 1.0, 1.0, 1.0)
+	elif (visual_id == "gentle_fist" or visual_id == "palms_burst" or visual_id == "air_palm") and is_instance_valid(sprite):
+		var tween = get_tree().create_tween()
+		tween.tween_property(sprite, "modulate", Color(0.5, 0.9, 1.0, 1.0), 0.07)
+		tween.tween_property(sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.2)
 
 func set_targeted(on: bool) -> void:
 	_is_targeted = on
@@ -325,6 +410,8 @@ func _update_outline() -> void:
 		mat.set_shader_parameter("outline_active", _is_targeted)
 
 func update_position(new_pos: Vector2) -> void:
+	if _kb_freeze_timer > 0.0:
+		return
 	if new_pos != target_position:
 		var diff = new_pos - target_position
 		# If position jump is large (e.g. respawn teleport), snap immediately
@@ -332,19 +419,39 @@ func update_position(new_pos: Vector2) -> void:
 		if diff.length() > 300.0:
 			global_position = new_pos
 		is_moving = true
-		# Determine facing from movement direction
-		if abs(diff.x) > abs(diff.y):
-			facing_dir = "right" if diff.x > 0 else "left"
-		elif diff.y != 0:
-			facing_dir = "down" if diff.y > 0 else "up"
+		# Determine facing from movement direction — supports diagonals
+		var dx = diff.x
+		var dy = diff.y
+		var threshold = 0.35  # how much of the minor axis counts as diagonal
+		if abs(dx) > 0 and abs(dy) > 0 and abs(dy) / abs(dx) > threshold and abs(dx) / abs(dy) > threshold:
+			if dx > 0 and dy > 0:  facing_dir = "down_right"
+			elif dx > 0:           facing_dir = "up_right"
+			elif dy > 0:           facing_dir = "down_left"
+			else:                  facing_dir = "up_left"
+		elif abs(dx) >= abs(dy):
+			facing_dir = "right" if dx > 0 else "left"
+		else:
+			facing_dir = "down" if dy > 0 else "up"
 	target_position = new_pos
+
+func freeze_for_knockback(dest: Vector2, duration: float) -> void:
+	_kb_freeze_timer = duration
+	target_position  = dest
+	global_position  = dest
 
 func set_facing(dir: String) -> void:
 	if dir != facing_dir:
 		facing_dir = dir
-		# Apply idle facing immediately when not moving
 		if not is_moving and sprite:
-			sprite.play("idle_" + facing_dir)
+			sprite.play("idle_" + _anim_dir())
+
+func _anim_dir() -> String:
+	match facing_dir:
+		"up_right":   return "right"
+		"up_left":    return "left"
+		"down_right": return "right"
+		"down_left":  return "left"
+	return facing_dir
 
 func set_level(lv: int) -> void:
 	if _level_label:
@@ -398,16 +505,19 @@ func _process(delta: float) -> void:
 		_death_timer = max(_death_timer - delta, 0.0)
 		_update_death_label()
 	var prev_pos = global_position
+	if _kb_freeze_timer > 0.0:
+		_kb_freeze_timer -= delta
+		return
 	global_position = global_position.lerp(target_position, INTERP_SPEED * delta)
 
 	var moved = global_position.distance_to(prev_pos) > 0.5
 	if moved:
-		var walk_anim = "walk_" + facing_dir
+		var walk_anim = "walk_" + _anim_dir()
 		if sprite.animation != walk_anim:
 			sprite.play(walk_anim)
 	else:
 		is_moving = false
-		var idle_anim = "idle_" + facing_dir
+		var idle_anim = "idle_" + _anim_dir()
 		if sprite.animation != idle_anim:
 			sprite.play(idle_anim)
 	_sync_all_layers()
@@ -454,11 +564,11 @@ func show_chat_bubble(text: String) -> void:
 	var bubble_h = line_count * LINE_H + PAD * 2
 
 	# Layout (Y axis, world space):
-	#   nameplate:   Y = -42
-	#   tail tip:    Y = -42 - GAP            = -45
-	#   panel bottom:Y = -42 - GAP - TAIL_H   = -50  (= tail base)
+	#   nameplate:   Y = -62
+	#   tail tip:    Y = -62 - GAP            = -65
+	#   panel bottom:Y = -62 - GAP - TAIL_H   = -70  (= tail base)
 	#   panel top:   Y = panel_bottom - bubble_h
-	var panel_bottom = -42 - GAP - TAIL_H
+	var panel_bottom = -62 - GAP - TAIL_H
 	var top_y        = panel_bottom - bubble_h
 
 	var root = Node2D.new()

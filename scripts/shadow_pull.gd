@@ -14,6 +14,7 @@ func _init() -> void:
 	ability_name    = "Shadow Pull"
 	description     = "Yank an enemy toward you with your shadow."
 	cooldown        = 6.0
+	cast_time    = 0.4
 	chakra_cost     = 20
 	activation      = "instant"
 	icon_color      = Color("7040b0")

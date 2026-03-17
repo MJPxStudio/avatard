@@ -2,34 +2,31 @@ extends Node
 
 # ============================================================
 # DUNGEON WAVE CONTROLLER (server-side)
-# One instance per dungeon run. Spawns waves of enemies,
-# advances on full clear, triggers boss on wave 3.
-# Lives as a child of ServerMain.
+# Spawns waves, advances on clear, fires checkpoint revives.
 # ============================================================
 
 signal dungeon_complete(instance_id: int)
-signal dungeon_failed(instance_id: int)
 
-var instance_id:   int     = -1
-var zone_name:     String  = ""        # unique zone e.g. "cave_of_trials_1"
-var party_peers:   Array   = []        # peer_ids in this instance
+var instance_id:    int     = -1
+var zone_name:      String  = ""
+var party_peers:    Array   = []
+var wave_spawn_pos: Vector2 = Vector2(0, 200)  # revive pos for ghosts at checkpoint
 
-var _current_wave:   int   = 0         # 0 = not started
+var _current_wave:   int   = 0
 var _total_waves:    int   = 3
-var _wave_enemies:   Array = []        # enemy_ids alive this wave
+var _wave_enemies:   Array = []
 var _started:        bool  = false
 var _complete:       bool  = false
-var _wave_advancing: bool  = false     # prevents duplicate advance calls
+var _wave_advancing: bool  = false
 
-# Wave definitions: array of arrays of {script, pos, id_suffix}
 const WAVE_DEFS = [
-	# Wave 1 — light patrol
+	# Wave 1
 	[
 		{script="res://scripts/enemy_wolf.gd",        pos=Vector2(-120, 0),   id="w1_wolf_a"},
 		{script="res://scripts/enemy_wolf.gd",        pos=Vector2( 120, 0),   id="w1_wolf_b"},
 		{script="res://scripts/enemy_rogue_ninja.gd", pos=Vector2(  0, -80),  id="w1_ninja_a"},
 	],
-	# Wave 2 — heavier
+	# Wave 2
 	[
 		{script="res://scripts/enemy_wolf.gd",        pos=Vector2(-160,  40), id="w2_wolf_a"},
 		{script="res://scripts/enemy_wolf.gd",        pos=Vector2( 160,  40), id="w2_wolf_b"},
@@ -58,7 +55,8 @@ func on_enemy_killed(enemy_id: String) -> void:
 		if _current_wave >= _total_waves:
 			_on_dungeon_complete()
 		else:
-			# Brief delay then next wave
+			# Wave clear — revive ghosts as checkpoint, then next wave after delay
+			_checkpoint_revive()
 			await get_tree().create_timer(3.0).timeout
 			if not _complete:
 				_wave_advancing = false
@@ -66,7 +64,7 @@ func on_enemy_killed(enemy_id: String) -> void:
 
 func _advance_wave() -> void:
 	_wave_advancing = false
-	_current_wave += 1
+	_current_wave  += 1
 	if _current_wave > _total_waves:
 		return
 
@@ -74,21 +72,28 @@ func _advance_wave() -> void:
 	if not sm:
 		return
 
-	var wave_def  = WAVE_DEFS[_current_wave - 1]
-	_wave_enemies = []
+	# Use first enemy spawn pos as the wave spawn / revive anchor
+	var wave_def   = WAVE_DEFS[_current_wave - 1]
+	wave_spawn_pos = wave_def[0].pos if wave_def.size() > 0 else Vector2(0, 200)
+	_wave_enemies  = []
 
 	for entry in wave_def:
 		var enemy_id = "%s_%d_%s" % [zone_name, instance_id, entry.id]
 		sm.spawn_dungeon_enemy(enemy_id, entry.script, entry.pos, zone_name)
 		_wave_enemies.append(enemy_id)
 
-	# Send fresh enemy roster to all players so static_cache is populated before sync arrives
+	# Send roster AFTER spawning — clients need static data before sync arrives
 	for pid in party_peers:
 		sm._send_enemy_roster(pid, zone_name)
 
-	# Notify all players in this instance
 	_broadcast_wave_start()
-	print("[DUNGEON] Instance %d wave %d started — %d enemies" % [instance_id, _current_wave, _wave_enemies.size()])
+	print("[DUNGEON] Instance %d wave %d started — %d enemies" % [
+		instance_id, _current_wave, _wave_enemies.size()])
+
+func _checkpoint_revive() -> void:
+	var sm = get_tree().root.get_node_or_null("ServerMain")
+	if sm and sm._dungeon_manager:
+		sm._dungeon_manager.checkpoint_revive(instance_id, wave_spawn_pos)
 
 func _broadcast_wave_start() -> void:
 	var net = get_tree().root.get_node_or_null("Network")
@@ -100,9 +105,8 @@ func _broadcast_wave_start() -> void:
 
 func _on_dungeon_complete() -> void:
 	_complete = true
-	var net = get_tree().root.get_node_or_null("Network")
-	if net:
-		for pid in party_peers:
-			net.notify_dungeon_complete.rpc_id(pid)
+	var sm = get_tree().root.get_node_or_null("ServerMain")
+	if sm and sm._dungeon_manager:
+		sm._dungeon_manager.on_dungeon_complete(instance_id)
 	print("[DUNGEON] Instance %d complete!" % instance_id)
 	dungeon_complete.emit(instance_id)

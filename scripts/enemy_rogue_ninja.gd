@@ -27,6 +27,10 @@ func _ready() -> void:
 func _process_aggro(_delta: float) -> void:
 	if target == null:
 		return
+	if target.is_immune or target.is_spinning:
+		target = null
+		state  = "return"
+		return
 	var to_target = (target.world_pos if "world_pos" in target else target.global_position) - global_position
 	var dist      = to_target.length()
 
@@ -55,6 +59,7 @@ func _throw_kunai(direction: Vector2) -> void:
 	proj.set_meta("damage",    attack_damage)
 	proj.set_meta("direction", direction)
 	proj.set_meta("owner_id",  get_instance_id())
+	proj.set_meta("zone_name", zone_name)
 	proj.global_position = global_position
 	get_parent().add_child(proj)
 

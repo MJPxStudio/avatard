@@ -1,0 +1,10 @@
+[gd_scene format=3 uid="uid://drtdngox57rgw"]
+
+[ext_resource type="Script" uid="uid://dm18an5kadc81" path="res://scripts/dungeon_world.gd" id="1_dworld"]
+[ext_resource type="TileSet" uid="uid://cni1ggbllgw4l" path="res://tilesets/dungeon_tileset.tres" id="2_51k6u"]
+
+[node name="dungeon_world" type="Node2D" unique_id=812428848]
+script = ExtResource("1_dworld")
+
+[node name="TileMapLayer" type="TileMapLayer" parent="." unique_id=1099590625]
+tile_set = ExtResource("2_51k6u")

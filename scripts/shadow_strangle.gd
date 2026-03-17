@@ -16,6 +16,7 @@ func _init() -> void:
 	ability_name    = "Shadow Strangle"
 	description     = "Choke a shadow-bound enemy for %d damage over %d seconds." % [DAMAGE_PER_TICK * TOTAL_TICKS, TOTAL_TICKS]
 	cooldown        = 5.0
+	cast_time    = 0.5
 	chakra_cost     = 20
 	activation      = "instant"
 	icon_color      = Color("6030a0")

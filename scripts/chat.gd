@@ -55,12 +55,22 @@ func _build() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	# Background panel — flush bottom right
+	# Background panel
 	_bg          = ColorRect.new()
-	_bg.color    = Color(0.04, 0.04, 0.04, 0.78)
+	_bg.color    = UITheme.color("chat_bg")
 	_bg.size     = Vector2(PANEL_W, PANEL_H + INPUT_H + PAD)
 	_bg.position = Vector2(0, -(PANEL_H + INPUT_H + PAD))
 	_root.add_child(_bg)
+	# Border accent
+	var chat_border = ColorRect.new()
+	chat_border.color    = UITheme.color("panel_accent")
+	chat_border.size     = Vector2(PANEL_W, 1)
+	chat_border.position = Vector2(0, 0)
+	_bg.add_child(chat_border)
+	var chat_border_l = ColorRect.new()
+	chat_border_l.color    = UITheme.color("panel_border")
+	chat_border_l.size     = Vector2(1, PANEL_H + INPUT_H + PAD)
+	_bg.add_child(chat_border_l)
 
 	# Scroll area for messages
 	_scroll          = ScrollContainer.new()
@@ -98,9 +108,11 @@ func _build() -> void:
 
 func _make_input_style() -> StyleBoxFlat:
 	var s = StyleBoxFlat.new()
-	s.bg_color     = Color(0.1, 0.1, 0.1, 0.9)
+	s.bg_color     = UITheme.color("chat_input_bg")
+	s.set_corner_radius_all(3)
+	s.anti_aliasing = true
 	s.border_width_bottom = 1
-	s.border_color = Color(0.3, 0.3, 0.3, 1)
+	s.border_color = UITheme.color("chat_border")
 	return s
 
 # ── Input handling ──────────────────────────────────────────

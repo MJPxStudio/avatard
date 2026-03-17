@@ -9,6 +9,7 @@ const ParticleBurst = preload("res://scripts/particle_burst.gd")
 
 var target_position:   Vector2 = Vector2.ZERO
 const INTERP_SPEED = 16.0
+var _kb_freeze_timer:  float   = 0.0   # blocks update_position briefly after knockback
 var enemy_type:   String  = "unknown"
 var enemy_id:          String  = ""
 var _last_hp:          int     = -1   # for hit flash detection
@@ -19,6 +20,10 @@ var _hud_hp_label:     Node    = null
 var _hud_name_label:   Node    = null
 var _hud_level_label:  Node    = null
 var _hud_max_hp:       int     = 1
+var _hud_current_hp:   int     = 1
+var _byakugan_bar_bg:  Node    = null
+var _byakugan_bar_fg:  Node    = null
+var _byakugan_lbl:     Node    = null
 var is_dead:           bool    = false
 const HUD_BAR_W:       float   = 32.0
 const HUD_BAR_H:       float   = 4.0
@@ -149,8 +154,58 @@ func _build_hud() -> void:
 	add_child(hp_lbl)
 	_hud_hp_label = hp_lbl
 
+	# Byakugan chakra bar — hidden unless observer has Byakugan active
+	var byk_bg      = ColorRect.new()
+	byk_bg.size     = Vector2(HUD_BAR_W, HUD_BAR_H)
+	byk_bg.position = Vector2(-HUD_BAR_W / 2.0, Y_OFFSET - 6)
+	byk_bg.color    = Color(0.05, 0.1, 0.2, 0.85)
+	byk_bg.z_index  = 9
+	byk_bg.visible  = false
+	add_child(byk_bg)
+	_byakugan_bar_bg = byk_bg
+
+	var byk_fg       = ColorRect.new()
+	byk_fg.size      = Vector2(HUD_BAR_W, HUD_BAR_H)
+	byk_fg.position  = Vector2(-HUD_BAR_W / 2.0, Y_OFFSET - 6)
+	byk_fg.color     = Color(0.2, 0.85, 1.0, 0.9)
+	byk_fg.z_index   = 10
+	byk_fg.visible   = false
+	add_child(byk_fg)
+	_byakugan_bar_fg = byk_fg
+
+	var byk_lbl      = Label.new()
+	byk_lbl.text     = ""
+	byk_lbl.add_theme_font_size_override("font_size", 6)
+	byk_lbl.add_theme_color_override("font_color", Color(0.4, 1.0, 1.0, 1.0))
+	byk_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 1))
+	byk_lbl.add_theme_constant_override("shadow_offset_x", 1)
+	byk_lbl.add_theme_constant_override("shadow_offset_y", 1)
+	byk_lbl.position = Vector2(-HUD_BAR_W / 2.0, Y_OFFSET - 6 + HUD_BAR_H + 1)
+	byk_lbl.z_index  = 10
+	byk_lbl.visible  = false
+	add_child(byk_lbl)
+	_byakugan_lbl = byk_lbl
+
+func set_byakugan_visible(on: bool, hp: int = 0, max_hp: int = 1) -> void:
+	if _byakugan_bar_bg == null:
+		return
+	_byakugan_bar_bg.visible = on
+	_byakugan_bar_fg.visible = on
+	_byakugan_lbl.visible    = on
+	if on and max_hp > 0:
+		var ratio = float(hp) / float(max_hp)
+		_byakugan_bar_fg.size.x = HUD_BAR_W * ratio
+		_byakugan_lbl.text      = "%d/%d" % [hp, max_hp]
+
 func update_position(new_pos: Vector2) -> void:
+	if _kb_freeze_timer > 0.0:
+		return
 	target_position = new_pos
+
+func freeze_for_knockback(dest: Vector2, duration: float) -> void:
+	_kb_freeze_timer = duration
+	target_position  = dest
+	# Don't snap global_position — lerp will slide smoothly to dest
 
 func update_hitbox_size(size: Vector2) -> void:
 	if size == _hitbox_size:
@@ -178,6 +233,7 @@ func update_state(new_hp: int, new_state: String, new_max_hp: int = -1, new_leve
 	# Update HUD
 	if new_max_hp > 0:
 		_hud_max_hp = new_max_hp
+	_hud_current_hp = max(0, new_hp)
 	var ratio = float(new_hp) / float(max(_hud_max_hp, 1))
 	if _hud_bar_fg and is_instance_valid(_hud_bar_fg):
 		_hud_bar_fg.size.x = HUD_BAR_W * ratio
@@ -331,9 +387,17 @@ void fragment() {
 
 func hit_flash() -> void:
 	if _sprite == null or not is_instance_valid(_sprite):
+		# Fallback — flash the whole node
+		var tw = create_tween()
+		tw.tween_property(self, "modulate", Color(2.0, 2.0, 2.0, 1.0), 0.04)
+		tw.tween_property(self, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.10)
 		return
 	var mat = _sprite.material as ShaderMaterial
 	if mat == null:
+		# No shader — modulate flash directly on sprite
+		var tw = create_tween()
+		tw.tween_property(_sprite, "modulate", Color(2.0, 2.0, 2.0, 1.0), 0.04)
+		tw.tween_property(_sprite, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.10)
 		return
 	mat.set_shader_parameter("flash_amount", 1.0)
 	var tween = create_tween()
@@ -348,4 +412,7 @@ func set_targeted(active: bool) -> void:
 	mat.set_shader_parameter("outline_active", active)
 
 func _process(delta: float) -> void:
+	if _kb_freeze_timer > 0.0:
+		_kb_freeze_timer -= delta
+		# Don't return — let the lerp run so knockback looks smooth, not instant
 	global_position = global_position.lerp(target_position, INTERP_SPEED * delta)

@@ -450,6 +450,12 @@ func remove_item(item_id: String, quantity: int = 1) -> bool:
 			return true
 	return false
 
+func get_count(item_id: String) -> int:
+	for slot in slots:
+		if slot != null and slot.id == item_id:
+			return slot.quantity
+	return 0
+
 func has_item(item_id: String, quantity: int = 1) -> bool:
 	var total = 0
 	for slot in slots:
