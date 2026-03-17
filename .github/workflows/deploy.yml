@@ -28,13 +28,13 @@ jobs:
 
       - name: Set server main scene
         run: |
-          cd avatard
+          cd avatard/avatard
           sed -i 's|run/main_scene=.*|run/main_scene="res://scenes/server_main.tscn"|' project.godot
 
       - name: Export Linux Server build
         run: |
-          cd avatard
-          godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
+          cd avatard/avatard
+          godot --headless --export-release "Linux" ../../avatard-server.x86_64 2>&1 || true
 
       - name: Deploy to server
         env:
