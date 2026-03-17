@@ -14,17 +14,17 @@ jobs:
 
       - name: Install Godot
         run: |
-          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_linux.x86_64.zip
-          unzip -q Godot_v4.3-stable_linux.x86_64.zip
+          wget -q https://github.com/godotengine/godot/releases/download/4.6.1-stable/Godot_v4.6.1-stable_linux.x86_64.zip
+          unzip -q Godot_v4.6.1-stable_linux.x86_64.zip
           mv Godot_v4.3-stable_linux.x86_64 /usr/local/bin/godot
           chmod +x /usr/local/bin/godot
 
       - name: Install Godot Export Templates
         run: |
-          mkdir -p ~/.local/share/godot/export_templates/4.3.stable
-          wget -q https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_export_templates.tpz
-          unzip -q Godot_v4.3-stable_export_templates.tpz
-          mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
+          mkdir -p ~/.local/share/godot/export_templates/4.6.1.stable
+          wget -q https://github.com/godotengine/godot/releases/download/4.6.1-stable/Godot_v4.6.1-stable_export_templates.tpz
+          unzip -q Godot_v4.6.1-stable_export_templates.tpz
+          mv templates/* ~/.local/share/godot/export_templates/4.6.1.stable/
 
       - name: Set server main scene
         run: |
