@@ -38,6 +38,53 @@ jobs:
           ls -la .godot/ 2>/dev/null || echo "No .godot dir"
           ls -la .godot/uid_cache.bin 2>/dev/null || echo "No uid cache"
 
+      - name: Patch project.godot to use direct paths for autoloads
+        run: |
+          python3 << 'PYEOF'
+          import os, re
+
+          # Build UID -> path mapping from all .gd files
+          uid_map = {}
+          for root, dirs, files in os.walk('.'):
+              # Skip .godot folder
+              dirs[:] = [d for d in dirs if d != '.godot']
+              for f in files:
+                  if f.endswith('.gd'):
+                      path = os.path.join(root, f)
+                      try:
+                          with open(path, 'r', encoding='utf-8') as fh:
+                              first_lines = fh.read(500)
+                          m = re.search(r'#\s*(uid://[a-z0-9]+)', first_lines)
+                          if m:
+                              uid = m.group(1)
+                              res_path = 'res://' + path.lstrip('./').replace('\\', '/')
+                              uid_map[uid] = res_path
+                      except:
+                          pass
+
+          print(f"Built UID map with {len(uid_map)} entries")
+
+          # Read project.godot
+          with open('project.godot', 'r') as f:
+              proj = f.read()
+
+          # Replace uid:// in autoload section with direct paths
+          def replace_uid(m):
+              uid = m.group(0)
+              if uid in uid_map:
+                  print(f"Replacing {uid} -> {uid_map[uid]}")
+                  return uid_map[uid]
+              print(f"WARNING: No mapping for {uid}")
+              return uid
+
+          patched = re.sub(r'uid://[a-z0-9]+', replace_uid, proj)
+
+          with open('project.godot', 'w') as f:
+              f.write(patched)
+
+          print("Done patching project.godot")
+          PYEOF
+
       - name: Export Linux Server build
         run: |
           godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
