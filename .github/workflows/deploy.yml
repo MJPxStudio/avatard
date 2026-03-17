@@ -30,6 +30,11 @@ jobs:
         run: |
           sed -i 's|run/main_scene=.*|run/main_scene="res://scenes/server_main.tscn"|' project.godot
 
+      - name: Import project assets
+        run: |
+          godot --headless --import 2>&1 || true
+          sleep 5
+
       - name: Export Linux Server build
         run: |
           godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
