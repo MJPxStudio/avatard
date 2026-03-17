@@ -26,22 +26,13 @@ jobs:
           unzip -q Godot_v4.3-stable_export_templates.tpz
           mv templates/* ~/.local/share/godot/export_templates/4.3.stable/
 
-      - name: Debug - show folder structure
-        run: |
-          echo "=== Root ==="
-          ls -la
-          echo "=== Subdirs ==="
-          find . -name "project.godot" 2>/dev/null
-
       - name: Set server main scene
         run: |
-          cd avatard/avatard
           sed -i 's|run/main_scene=.*|run/main_scene="res://scenes/server_main.tscn"|' project.godot
 
       - name: Export Linux Server build
         run: |
-          cd avatard/avatard
-          godot --headless --export-release "Linux" ../../avatard-server.x86_64 2>&1 || true
+          godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
 
       - name: Deploy to server
         env:
