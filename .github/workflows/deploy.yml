@@ -34,27 +34,19 @@ jobs:
         run: |
           godot --headless --export-release "Linux" ../avatard-server.x86_64 2>&1 || true
 
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SERVER_SSH_KEY }}
+
       - name: Deploy to server
         env:
-          SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
         run: |
-          install -m 600 /dev/null /tmp/deploy_key
-          printf '%s' "$SSH_KEY" > /tmp/deploy_key
-          SSH="ssh -i /tmp/deploy_key -o StrictHostKeyChecking=no $SERVER_USER@$SERVER_IP"
-
-          # Stop both servers
-          $SSH "systemctl stop avatard-dev"
-
-          # Upload new files to dev
-          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no avatard-server.x86_64 $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
-          scp -i /tmp/deploy_key -o StrictHostKeyChecking=no avatard-server.pck $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
-
-          # Make executable and restart dev
-          $SSH "chmod +x /opt/avatard/dev/avatard-server.x86_64 && systemctl start avatard-dev"
-
-          # Clean up
-          rm /tmp/deploy_key
-
+          ssh-keyscan -H $SERVER_IP >> ~/.ssh/known_hosts
+          ssh $SERVER_USER@$SERVER_IP "systemctl stop avatard-dev"
+          scp ../avatard-server.x86_64 $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
+          scp ../avatard-server.pck $SERVER_USER@$SERVER_IP:/opt/avatard/dev/
+          ssh $SERVER_USER@$SERVER_IP "chmod +x /opt/avatard/dev/avatard-server.x86_64 && systemctl start avatard-dev"
           echo "Dev server updated successfully"
