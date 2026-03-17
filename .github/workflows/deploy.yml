@@ -32,8 +32,11 @@ jobs:
 
       - name: Import project assets
         run: |
-          godot --headless --import 2>&1 || true
-          sleep 5
+          timeout 120 godot --headless --import 2>&1 || true
+          sleep 10
+          echo "=== Checking uid cache ==="
+          ls -la .godot/ 2>/dev/null || echo "No .godot dir"
+          ls -la .godot/uid_cache.bin 2>/dev/null || echo "No uid cache"
 
       - name: Export Linux Server build
         run: |
