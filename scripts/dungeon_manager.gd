@@ -106,6 +106,21 @@ func initiate_ready_check(peer_id: int, dungeon_id: String, difficulty: String =
 		inst["pending_peers"].append(peer_id)
 	_peer_pending[peer_id] = inst_id
 
+	# Auto-add all online party members to the ready check
+	if party_id != -1:
+		var sm = get_parent()
+		for other_id in server_players.keys():
+			if other_id == peer_id:
+				continue
+			var other_party = sm._party_in_party.get(other_id, -1) if sm else -1
+			if other_party == party_id and other_id not in inst["pending_peers"]:
+				var def = DungeonData.get_dungeon(dungeon_id)
+				if inst["pending_peers"].size() < def.get("max_players", 4):
+					inst["pending_peers"].append(other_id)
+					_peer_pending[other_id] = inst_id
+					var other_sp = server_players.get(other_id, null)
+					print("[DUNGEON] Auto-added party member %s to ready check" % (other_sp.username if other_sp else str(other_id)))
+
 	print("[DUNGEON] %s joined ready check for instance %d" % [sp.username, inst_id])
 	_broadcast_ready_update(inst_id)
 	return { "ok": true, "instance_id": inst_id }

@@ -10,6 +10,9 @@ var target_position: Vector2 = Vector2.ZERO
 var _kb_freeze_timer:  float   = 0.0
 var facing_dir: String = "down"
 var is_moving: bool = false
+var is_spinning: bool = false
+var _idle_timer: float = 0.0
+const IDLE_DELAY: float = 0.15
 
 const INTERP_SPEED = 16.0
 
@@ -512,14 +515,17 @@ func _process(delta: float) -> void:
 
 	var moved = global_position.distance_to(prev_pos) > 0.5
 	if moved:
+		_idle_timer = 0.0
 		var walk_anim = "walk_" + _anim_dir()
 		if sprite.animation != walk_anim:
 			sprite.play(walk_anim)
 	else:
-		is_moving = false
-		var idle_anim = "idle_" + _anim_dir()
-		if sprite.animation != idle_anim:
-			sprite.play(idle_anim)
+		_idle_timer += delta
+		if _idle_timer >= IDLE_DELAY:
+			is_moving = false
+			var idle_anim = "idle_" + _anim_dir()
+			if sprite.animation != idle_anim:
+				sprite.play(idle_anim)
 	_sync_all_layers()
 
 func _bubble_count_lines(text: String, chars_per_line: int) -> int:
