@@ -114,8 +114,8 @@ func initiate_ready_check(peer_id: int, dungeon_id: String, difficulty: String =
 				continue
 			var other_party = sm._party_in_party.get(other_id, -1) if sm else -1
 			if other_party == party_id and other_id not in inst["pending_peers"]:
-				var def = DungeonData.get_dungeon(dungeon_id)
-				if inst["pending_peers"].size() < def.get("max_players", 4):
+				var party_def = DungeonData.get_dungeon(dungeon_id)
+				if inst["pending_peers"].size() < party_def.get("max_players", 4):
 					inst["pending_peers"].append(other_id)
 					_peer_pending[other_id] = inst_id
 					var other_sp = server_players.get(other_id, null)
