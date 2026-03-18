@@ -2,11 +2,16 @@
 extends EditorScript
 
 func _run() -> void:
-	var scene = load("res://scenes/village.tscn").instantiate()
-	print("[TILE CHECK] Scanning village.tscn...")
-	_check_node(scene)
-	scene.free()
-	print("[TILE CHECK] Done.")
+	for scene_path in ["res://scenes/village.tscn", "res://scenes/open_world.tscn"]:
+		print("[TILE CHECK] Scanning %s..." % scene_path)
+		var packed = load(scene_path)
+		if packed == null:
+			print("[TILE CHECK] Could not load %s" % scene_path)
+			continue
+		var scene = packed.instantiate()
+		_check_node(scene)
+		scene.free()
+	print("[TILE CHECK] Done. If no BAD TILE lines above, tiles are clean.")
 
 func _check_node(node: Node) -> void:
 	if node is TileMap:
